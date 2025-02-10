@@ -8,7 +8,7 @@
 from functools import partial
 import collections, re, sys, os
 import numpy as np
-from brainannlib.stats_and_metrics import tqdm_mem_stats, matrix_information
+#from brainannlib.stats_and_metrics import tqdm_mem_stats, matrix_information
 
 root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
 activations_path = os.path.join(root_data_dir, "ann_brain_data/activations")
@@ -47,30 +47,42 @@ def iter_modules(curr_module, descriptor = "", mod_dict = {}, plain_style=False,
 
 
 
-def save_activations(activations, name, print_layerinout, module, inp, out):
-  """
-  A function that saves the current activations of a given pytorch module 
-  (e.g. a neural network layer) to a dictionary for downstream usage
-  to use as a hook function for the pytorch module
+# def save_activations(activations, name, print_layerinout, module, inp, out):
+#   """
+#   A function that saves the current activations of a given pytorch module 
+#   (e.g. a neural network layer) to a dictionary for downstream usage
+#   to use as a hook function for the pytorch module
 
-  Args:
-    activations (collections.defaultdict(list)): dictionary to save the activations to
-    name : key indexing the list to which the current activations should be appended to
-    print_layerinout : print information for debugging whenever this function is called
-    module, inp, out : default args passed to the hook function, 
-      out contains the activations we are interested in
+#   Args:
+#     activations (collections.defaultdict(list)): dictionary to save the activations to
+#     name : key indexing the list to which the current activations should be appended to
+#     print_layerinout : print information for debugging whenever this function is called
+#     module, inp, out : default args passed to the hook function, 
+#       out contains the activations we are interested in
     
-  """
-  if print_layerinout: 
-    print('Inside ' + module.__class__.__name__ + ' forward', "in:", inp[0].shape, "out:", out.shape)
+#   """
+#   if print_layerinout: 
+#     print('Inside ' + module.__class__.__name__ + ' forward', "in:", inp[0].shape, "out:", out.shape)
   
-  # in case out contains more than one element (e.g. activations, and attentions)
-  # only return the furst
-  if isinstance(out, tuple): out = out[0]
-  activations[name].append(out.detach().cpu().float().numpy())
+#   # in case out contains more than one element (e.g. activations, and attentions)
+#   # only return the furst
+#   if isinstance(out, tuple): out = out[0]
+#   activations[name].append(out.detach().cpu().float().numpy())
 
 
-# check if any 
+# # check if any 
+# 
+def save_activations(activations, name, print_layerinout):
+    def hook(module, inp, out):
+        if print_layerinout: 
+            print('Inside ' + module.__class__.__name__ + ' forward', "in:", inp[0].shape, "out:", out.shape)
+        
+        # in case out contains more than one element (e.g. activations, and attentions)
+        # only return the first
+        if isinstance(out, tuple): out = out[0]
+        activations[name].append(out.detach().cpu().float().numpy())
+    return hook
+
 contains_any = lambda s, incl: np.any(np.array([re.match(x, s) for x in incl])!=None) 
 
 def any_exact_match(name, includes):
@@ -120,7 +132,7 @@ def add_activation_hooks_to_layers(model, include_layers_containing, print_layer
   for name in md.keys():
     if not comp_fn(name, include_layers_containing): continue;
     if verbose: print("Adding hook to:", name) # end=", ");
-    h1 = md[name].register_forward_hook(partial(save_activations, actv, name, print_stats, print_layerinout))
+    h1 = md[name].register_forward_hook(save_activations(actv, name, print_stats))
     hooks.append(h1)
     hook_layer_dict.update({name: md[name]})
 

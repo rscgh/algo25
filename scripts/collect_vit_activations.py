@@ -12,7 +12,7 @@ root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
 actv_dir = os.path.join(root_data_dir, "ann_brain_data/activations")
 
 # optional; this is the path where ANN weights are stored/cached by the transformers library
-os.environ['HF_HOME'] = "/scratch-scc/users/robert.scholz2/cache/huggingface"
+os.environ['HF_HOME'] = "/home/bagga005/algo/comp_data/hf"
 
 from brainannlib.anns import load_model
 from torch.utils.data.dataloader import DataLoader
@@ -61,12 +61,12 @@ print(layers)
 actv, hook_layer_dict, hooks = add_activation_hooks_to_layers(model, layers, verbose=False, comp_fn = any_exact_match)
 
 
-
 """
+
 ## One example loop to test if this is actually working
 ## and try out the time and memory needed for a given batch size
 
-stim_path="/scratch-scc/users/robert.scholz2/cneuromod/algonauts_2025.competitors/stimuli/movies/friends/s1/friends_s01e01a.mkv"
+stim_path= root_data_dir + "/algonauts_2025.competitors/stimuli/movies/friends/s1/friends_s01e01a.mkv"
 ds = TRSamplingDecordVDataset(stim_path, target_mri_TR, None)
 
 batch_size = 200
