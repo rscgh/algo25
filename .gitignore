@@ -1,0 +1,3 @@
+.lightning_studio/.studiorc
+.lightning_studio/on_start.sh
+.lightning_studio/on_stop.sh
