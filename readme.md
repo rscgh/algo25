@@ -12,7 +12,7 @@
 
 ```sh
 # clone the github directory
-git clone ...
+git clone git@github.com:rscgh/algo25.git
 
 # create a conda environment with the necessary dependencies (~4GB)
 # possibly you have to first load the module, e.g by module load conda|anaconda3|miniconda
@@ -30,7 +30,7 @@ python -m ipykernel install --user --name algoenv --display-name "algoenv"
 # to later enable imports like
 # brainannlib.anns import load_model
 # can be uninstalled later using: pip uninstall brainannlib
-cd highlv_ann/brainannlib
+cd algo25 #/brainannlib
 pip install -e .
 
 # Lastly set up the needed paths to the datasets. Please change the paths to suit your local system.
