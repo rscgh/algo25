@@ -37,9 +37,9 @@ pip install -e .
 # You can even use the same directory for this
 export ALGONAUTS_ROOT_DIR="/scratch-scc/users/robert.scholz2/cneuromod"
 # per-episode ANN activations
-mkdir -p $BRAINANN_ROOT_DIR/ann_brain_data/activations
+mkdir -p $ALGONAUTS_ROOT_DIR/ann_brain_data/activations
 # cummulated+reduced activations, saved regression models and predictions
-mkdir -p $BRAINANN_ROOT_DIR/ann_brain_data/outputs
+mkdir -p $ALGONAUTS_ROOT_DIR/ann_brain_data/outputs
 
 # To avoid having to rerun it everytime you start a new shell, you can add it also to your user profile
 echo 'export ALGONAUTS_ROOT_DIR="/scratch-scc/users/robert.scholz2/cneuromod"' >> ~/.profile
@@ -59,7 +59,7 @@ datalad is like git with big file support
 
 ```sh
 # go to the project root folder
-cd $BRAINANN_ROOT_DIR
+cd $ALGONAUTS_ROOT_DIR
 
 # the following command clones the git repo to a local dir "algonauts_2025.competitors" (without downloading the files)
 datalad install -r git@github.com:courtois-neuromod/algonauts_2025.competitors.git
