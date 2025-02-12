@@ -76,7 +76,66 @@ datalad get -r -J8 stimuli/*
 
 ## Running 
 
-For examples, check the scripts under /scripts/
+An example pipeline (leading to the current submission results) looks like the following:
+```sh
+python -u scripts/collect_smollm2_activations.py
+python -u scripts/reduce_smollm2_activations.py
+# repeat these two steps for the other modalities [...]
+python -u scripts/regress_combined.py
+```
 
 
-## Testing
+## Working with the git repo
+
+**Working on a your own (feature) branch**
+```sh
+git checkout -b my-feature-branch
+
+# within the feature branch, commit changes
+git add .
+git commit -m "Description of changes"
+```
+
+To make it clearer what a specific branch does, we can stick to branch naming conventions such as
+```
+feature/language-model-llamav32         # e.g. including feature reduction
+feature/vision-models-various           # e.g. including multiple models
+feature/looped-feature-selection        # including on specific feature selection method
+release/submission-v2.0                 # whenever we try to work on a new submission
+```
+
+**Updating and pushing of the branch**
+```sh
+# change to main branch again & ensure the local main is up-to-date with the remote
+git checkout main
+git pull origin main  
+
+# include all the updates from the main
+# in the branch through rebasing
+git checkout my-feature-branch
+git rebase main
+
+# in case of conflict, edit the files (resolving conflicts)
+# and then continue the rebase
+git add <file-with-conflict>
+git rebase --continue
+# or alternatively abort: git rebase --abort
+
+# push the rebased branch to the remote
+# need to force, because rebase might have
+# has changed # the commit history
+git push origin my-feature-branch --force
+```
+
+**Integrating branch into main through pull request**
+```sh
+# Go to GitHub → your repository → open a pull request from my-feature-branch to main.
+# After approval, merge the PR on GitHub.
+
+# On your machine, pull these changes
+git checkout main
+git pull origin main
+# optionally delete the branch:
+git branch -d my-feature-branch
+git push origin --delete my-feature-branch
+```
