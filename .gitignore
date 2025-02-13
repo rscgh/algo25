@@ -1,3 +1,11 @@
 .lightning_studio/.studiorc
 .lightning_studio/on_start.sh
 .lightning_studio/on_stop.sh
+brainannlib/__pycache__/__init__.cpython-310.pyc
+brainannlib/__pycache__/ann_activations.cpython-310.pyc
+brainannlib/__pycache__/anns.cpython-310.pyc
+brainannlib/__pycache__/stimuli_data_loading.cpython-310.pyc
+brainannlib.egg-info/dependency_links.txt
+brainannlib.egg-info/PKG-INFO
+brainannlib.egg-info/SOURCES.txt
+brainannlib.egg-info/top_level.txt
