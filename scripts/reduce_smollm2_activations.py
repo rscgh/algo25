@@ -4,15 +4,15 @@ import numpy as np
 from glob import glob
 from tqdm.auto import tqdm
 import pickle as pk
-
+from brainannlib.utils import get_root_dir, get_output_actvations_dir, get_hf_dir
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.random_projection import johnson_lindenstrauss_min_dim
 from sklearn.random_projection import SparseRandomProjection
 from sklearn.pipeline import make_pipeline
 
-root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
-actv_dir = os.path.join(root_data_dir, "ann_brain_data/activations")
+root_data_dir = get_root_dir()
+actv_dir = get_output_actvations_dir()
 
 
 # Finding all the saved activations/embeddings from SmolLM2

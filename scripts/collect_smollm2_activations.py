@@ -4,9 +4,10 @@ import pandas as pd
 import numpy as np
 from glob import glob
 from tqdm.auto import tqdm
+from brainannlib.utils import get_root_dir, get_output_actvations_dir, get_hf_dir
 
-root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
-actv_dir = os.path.join(root_data_dir, "ann_brain_data/activations")
+root_data_dir = get_root_dir()
+actv_dir = get_output_actvations_dir()
 
 import torch
 from torch.utils.data import Dataset, DataLoader

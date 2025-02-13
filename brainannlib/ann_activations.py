@@ -8,10 +8,11 @@
 from functools import partial
 import collections, re, sys, os
 import numpy as np
+from brainannlib.utils import get_root_dir, get_output_actvations_dir, get_hf_dir
 #from brainannlib.stats_and_metrics import tqdm_mem_stats, matrix_information
 
-root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
-activations_path = os.path.join(root_data_dir, "ann_brain_data/activations")
+root_data_dir = get_root_dir()
+activations_path = get_output_actvations_dir()
 
 import torch;
 

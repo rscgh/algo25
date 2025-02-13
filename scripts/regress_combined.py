@@ -10,8 +10,9 @@ import numpy as np
 from brainannlib.algonauts_funcs import load_stimulus_features, load_fmri, align_features_and_fmri_samples
 from brainannlib.algonauts_funcs import compute_encoding_accuracy
 from brainannlib.algonauts_funcs import train_sklearn_ridgecv
+from brainannlib.utils import get_root_dir, get_output_actvations_dir, get_hf_dir
 
-root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"] if "ALGONAUTS_ROOT_DIR" in os.environ.keys() else "/scratch-scc/users/robert.scholz2/cneuromod"
+root_data_dir = get_root_dir()
 acc_dir= f"{root_data_dir}/ann_brain_data/outputs"
 
 all_movie_sets = ["friends-s01", "friends-s02", "friends-s03", "friends-s04", "friends-s05", \

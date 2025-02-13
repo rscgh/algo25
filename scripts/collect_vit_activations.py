@@ -7,13 +7,14 @@
 
 import os
 import numpy as np
+from brainannlib.utils import color_print, get_root_dir, get_output_actvations_dir, get_hf_dir
 
-root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
-actv_dir = os.environ["ALGONAUTS_ACTIVATIONS_DIR"]
+root_data_dir = get_root_dir()
+actv_dir = get_output_actvations_dir()
 #os.path.join(root_data_dir, "ann_brain_data/activations")
 
 # optional; this is the path where ANN weights are stored/cached by the transformers library
-#os.environ['HF_HOME'] = "/home/bagga005/algo/comp_data/hf"
+os.environ['HF_HOME'] = get_hf_dir()
 
 from brainannlib.anns import load_model
 from torch.utils.data.dataloader import DataLoader
@@ -61,21 +62,6 @@ print(layers)
 # add the hooks to the selected model layers to collect activations
 actv, hook_layer_dict, hooks = add_activation_hooks_to_layers(model, layers, verbose=False, comp_fn = any_exact_match)
 
-def color_print(*args, color=None):
-    colors = {
-        'red': '\033[91m',
-        'green': '\033[92m',
-        'blue': '\033[94m',
-        'yellow': '\033[93m',
-        'magenta': '\033[95m',
-        'cyan': '\033[96m',
-        'white': '\033[97m'  # Added white
-    }
-    # Use white if color is None or not in the dictionary
-    color_code = colors.get(color, colors['white'])
-    # Convert all arguments to strings and join them with spaces
-    text = ' '.join(str(arg) for arg in args)
-    return print(f"{color_code}{text}\033[0m")
 
 """
 
@@ -130,7 +116,8 @@ for i, (stim_id, stim_path) in iterator:
     for inp_batch, labels in stimulus_loader:
         actv.clear()
         inp_batch=inp_batch.to(model.device);
-
+        print('inp_batch.shape', inp_batch.shape)
+        
         with torch.no_grad():
             output = model_forward(inp_batch)#.squeeze())
             #proj=model.visual_projection(output[1])
