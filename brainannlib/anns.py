@@ -14,7 +14,7 @@ import numpy as np
 # to make models run fast on CPUs
 
 from torch import set_num_threads
-from brainannlib.stats_and_metrics import get_num_assigned_cpus
+from brainannlib.monitoring import get_num_assigned_cpus
 set_num_threads(get_num_assigned_cpus())
 
 

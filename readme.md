@@ -85,6 +85,18 @@ python -u scripts/regress_combined.py
 ```
 
 
+## Resource requirements
+
+```sh
+# for the combined regression model fitting (min 40gb RAM, so far uses only one CPU)
+srun --time=3:00:00 --export=ALL --partition=scc-cpu --ntasks=1 --nodes=1 --cpus-per-task=2 --mem=40G --pty bash
+
+# for collecting activations, CPUs could be less
+# and possibly the memory too, as whats mostly matters is the GPU memory
+srun --time=3:00:00 --export=ALL --partition=scc-gpu --gres=gpu:1 --ntasks=1 --nodes=1 --cpus-per-task=12 --mem=40G --pty bash
+
+```
+
 ## Working with the git repo
 
 **Working on a your own (feature) branch**

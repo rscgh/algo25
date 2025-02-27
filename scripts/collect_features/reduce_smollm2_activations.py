@@ -101,7 +101,6 @@ fn= os.path.join(path, f"actv-SmolLM2-1.7B-algonauts_all_train-last5trs.pca2000.
 np.save(fn, features)
 
 
-
 """
 # Reduced features can now be loaded as:
 
