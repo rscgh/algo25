@@ -4,6 +4,7 @@ Date: 12/03/25
 """
 import h5py
 import os
+import torch
 import torchvision
 
 from torch.utils.data.dataset import Dataset
@@ -14,11 +15,13 @@ from brainannlib.algonauts_funcs import load_fmri
 
 
 class FriendsDataset(Dataset):
-    def __init__(self, root, modalities=["fmri", "video"], image_transform=None, subjects=[1,2,3,5], timesample=1):
+    def __init__(self, root, modalities=["fmri", "video"], image_transform=None, subjects=[1,2,3,5], timesample=1,
+                 target_video_len=32):
         self.root = root
         self.modalities = modalities
         self.image_transform = image_transform
         self.timesample = timesample
+        self.target_video_len = target_video_len
 
         # List all .h5 files in the root directory
         self.fmris = []
@@ -56,13 +59,8 @@ class FriendsDataset(Dataset):
         return self.tot_samples
 
     def __getitem__(self, idx):
-        print("Getting item: ", idx)
-
         fmri_index = self.scan_idx_map[idx]
-        print("FMRI index: ", fmri_index)
-
         sample_index = self.time_idx_map[idx]
-        print("Sample index: ", sample_index)
 
         fmri = self.fmris[fmri_index]
         fmri_data = fmri["fmri"][sample_index]
@@ -70,24 +68,31 @@ class FriendsDataset(Dataset):
         video = self.load_movie(fmri["movie"])
         n_frames = len(video)
         n_samples = fmri["n_samples"]
-        print("Number of frames: ", n_frames)
-        print("Number of samples: ", n_samples)
 
         window_length = n_frames // n_samples
         start_frame = sample_index * window_length
         end_frame = start_frame + window_length
-        print("Start frame: ", start_frame)
-        print("End frame: ", end_frame)
+
         # Ensure that the end frame does not exceed the number of frames
         if end_frame > n_frames:
             end_frame = n_frames
-            print("Adjusted end frame: ", end_frame)
-
-        print("Window length: ", window_length)
+            # print("Adjusted end frame: ", end_frame)
 
         video_data = video[start_frame:end_frame:self.timesample]  # TxCxHxW
+
+        # If the video length is less than the target length, pad it
+        if len(video_data) < self.target_video_len:
+            video_data = torch.cat([video_data, video_data[-1].unsqueeze(0).expand(self.target_video_len - len(video_data), -1, -1, -1)])
+
+        # If the video length is greater than the target length, truncate it (from the end)
+        elif len(video_data) > self.target_video_len:
+            video_data = video_data[-self.target_video_len:]
+
         if self.image_transform is not None:
-            video_data = self.image_transform(video_data)
+            lst = torch.split(video_data, 1, 0)
+            lst = [l[0] for l in lst]
+            video_data = self.image_transform(lst, return_tensors="pt")
+
 
         return video_data, fmri_data
 
