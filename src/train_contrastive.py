@@ -45,7 +45,7 @@ def parse_args():
     parser.add_argument('--lr', help="learning rate", type=float, default=1e-3)
     parser.add_argument('--lr_decay', type=str, help='type of decay', choices=['cosine', 'step'], default='step')
     parser.add_argument('--lr_decay_rate', type=float, default=0.9, help='decay rate for learning rate (for step)')
-    parser.add_argument('--lr_decay_epochs', type=str, help='steps of lr decay (list)', default="700,800,900")
+    parser.add_argument('--lr_decay_epochs', type=str, help='steps of lr decay (list)', default="7,8,9")
     parser.add_argument('--lr_decay_step', type=int, help='decay rate step (overwrites lr_decay_epochs)', default=10)
     parser.add_argument('--warm', action='store_true', help='warmup learning rate')
     parser.add_argument('--momentum', type=float, help='momentum', default=0.9)
