@@ -93,7 +93,11 @@ srun --time=3:00:00 --export=ALL --partition=scc-cpu --ntasks=1 --nodes=1 --cpus
 
 # for collecting activations, CPUs could be less
 # and possibly the memory too, as whats mostly matters is the GPU memory
-srun --time=3:00:00 --export=ALL --partition=scc-gpu --gres=gpu:1 --ntasks=1 --nodes=1 --cpus-per-task=12 --mem=40G --pty bash
+srun --time=6:00:00 --export=ALL --partition=scc-gpu --gres=gpu:1 --ntasks=1 --nodes=1 --cpus-per-task=12 --mem=40G --pty bash
+
+module load gcc/14
+export LD_LIBRARY_PATH=$(dirname $(g++ -print-file-name=libstdc++.so.6)):$LD_LIBRARY_PATH
+strings $(g++ -print-file-name=libstdc++.so.6) | grep GLIBCXX
 
 ```
 

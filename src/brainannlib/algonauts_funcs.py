@@ -482,7 +482,7 @@ def align_features_and_fmri_samples(features, fmri, excluded_samples_start, excl
         else:
             stimset = stimset.split("-")[-1]
             episodes_in_set = [key for key in fmri if key.startswith(stimset)]
-        
+
         if v>=1: print(stimset, len(episodes_in_set), episodes_in_set[:3])
 
         for episode in episodes_in_set:
@@ -502,7 +502,7 @@ def align_features_and_fmri_samples(features, fmri, excluded_samples_start, excl
 
                 # for each modalitly [i.e. visual, audio or language]
                 for mod, mod_features in features.items():
-
+                    
                     episode_feat_len= len(mod_features[episode])
                     if mod in ['visual', 'audio']:
                         # the feature samples need all be of the same length (=stimulus_window) and
