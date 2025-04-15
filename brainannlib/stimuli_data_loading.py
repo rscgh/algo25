@@ -160,7 +160,44 @@ class DecordAudioDataset(Dataset):
               if hasattr(prep_track, "attention_mask") else raw_track_len;
         
         return track, attn_mask
+
+##############################################################################
+# Multiframe Video datasets
+
+import decord
+decord.bridge.set_bridge('torch')
+import numpy as np
+from decord import VideoReader, cpu
+decord.bridge.set_bridge('torch')
+
+from torch.utils.data.dataset import Dataset
+
+class TRClipVideoDecordDataset(Dataset):
+    def __init__(self, movie_file_path, target_mri_TR, transform=None, num_threads=1):
+        self.videoreader = VideoReader(movie_file_path, num_threads=num_threads, ctx=cpu(0))
+        self.videoreader.seek(0)
+        self.transform = transform
+        self.n_frames = len(self.videoreader)
+        self.fps = self.videoreader.get_avg_fps();
+
+        self.n_tr_samples = int(round((self.n_frames/self.fps)/target_mri_TR))
+        
+        tr_start_s = (np.arange(self.n_tr_samples)*target_mri_TR)
+
+        self.start_frame_idxs = np.round(tr_start_s*self.fps).astype(int)
+        # make sure it stays in the bounds
+        self.start_frame_idxs = np.clip(self.start_frame_idxs, 0, self.n_frames-1)#.astype(int)
+        self.frames_per_tr = int(target_mri_TR*self.fps)
+
+        
+    def __len__(self): return len(self.start_frame_idxs)
     
+    def __getitem__(self, idx):   
+        mvidx = self.start_frame_idxs[idx]
+        frame = self.videoreader[mvidx:mvidx+self.frames_per_tr]
+        if self.transform is not None:
+            frame = self.transform(frame)
+        return frame, 0
         
 
 ##############################################################################
