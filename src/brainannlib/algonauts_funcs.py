@@ -16,60 +16,66 @@ from tqdm.auto import tqdm
 
 
 
-def load_fmri(root_data_dir, subject):
+def load_fmri(root_data_dir, subject, v=False, average_repeat_runs=True, targets=["friends", "movie10"]):
     """
     Load the fMRI responses for the selected subject.
     returns dictionary containing the  fMRI responses with stimulus/movie names as key.
     """
     fmri = {}
-    ### Load the fMRI responses for Friends ###
-    # Data directory
-    fmri_file = f'sub-0{subject}_task-friends_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-s123456_bold.h5'
-    fmri_dir = os.path.join(root_data_dir, 'algonauts_2025.competitors','fmri', f'sub-0{subject}', 'func', fmri_file)
-    # Load the the fMRI responses
-    fmri_friends = h5py.File(fmri_dir, 'r')
-    keys = fmri_friends.keys();
-    print("fmri_friends:", len(keys), list(keys)[:5] )
 
-    for key, val in fmri_friends.items():
-        fmri[str(key[13:])] = val[:].astype(np.float32)
-    del fmri_friends
+    if "friends" in targets:
+        ### Load the fMRI responses for Friends ###
+        # Data directory
+        fmri_file = f'sub-0{subject}_task-friends_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-s123456_bold.h5'
+        fmri_dir = os.path.join(root_data_dir, 'algonauts_2025.competitors','fmri', f'sub-0{subject}', 'func', fmri_file)
+        # Load the the fMRI responses
+        fmri_friends = h5py.File(fmri_dir, 'r')
+        keys = fmri_friends.keys();
+        if v: print("fmri_friends:", len(keys), list(keys)[:5] )
 
-    ### Load the fMRI responses for Movie10 ###
-    # Data directory
-    fmri_file = f'sub-0{subject}_task-movie10_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_bold.h5'
-    fmri_dir = os.path.join(root_data_dir, 'algonauts_2025.competitors','fmri', f'sub-0{subject}', 'func', fmri_file)
-    # Load the the fMRI responses
-    fmri_movie10 = h5py.File(fmri_dir, 'r')
-    keys = fmri_movie10.keys();
-    print("fmri_movie10:", len(keys), list(keys)[:5] )
-    
-    for key, val in fmri_movie10.items():
-        fmri[key[13:]] = val[:].astype(np.float32)
-    del fmri_movie10
+        for key, val in fmri_friends.items():
+            fmri[str(key[13:])] = val[:].astype(np.float32)
+        del fmri_friends
 
-    # Average the fMRI responses across the two repeats for 'figures'
-    keys_all = fmri.keys()
-    figures_splits = 12
-    for s in range(figures_splits):
-        movie = 'figures' + format(s+1, '02')
-        keys_movie = [rep for rep in keys_all if movie in rep]
-        fmri[movie] = ((fmri[keys_movie[0]] + fmri[keys_movie[1]]) / 2).astype(np.float32)
-        del fmri[keys_movie[0]]
-        del fmri[keys_movie[1]]
-    # Average the fMRI responses across the two repeats for 'life'
-    keys_all = fmri.keys()
-    life_splits = 5
-    for s in range(life_splits):
-        movie = 'life' + format(s+1, '02')
-        keys_movie = [rep for rep in keys_all if movie in rep]
-        fmri[movie] = ((fmri[keys_movie[0]] + fmri[keys_movie[1]]) / 2).astype(np.float32)
-        del fmri[keys_movie[0]]
-        del fmri[keys_movie[1]]
+    if "movie10" in targets:
+        ### Load the fMRI responses for Movie10 ###
+        # Data directory
+        fmri_file = f'sub-0{subject}_task-movie10_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_bold.h5'
+        fmri_dir = os.path.join(root_data_dir, 'algonauts_2025.competitors','fmri', f'sub-0{subject}', 'func', fmri_file)
+        # Load the the fMRI responses
+        fmri_movie10 = h5py.File(fmri_dir, 'r')
+        keys = fmri_movie10.keys();
+        if v: print("fmri_movie10:", len(keys), list(keys)[:5] )
 
-    ### Output ###
-    keys = fmri.keys();
-    print("fmri:", len(keys), list(keys)[:5] )
+        for key, val in fmri_movie10.items():
+            fmri[key[13:]] = val[:].astype(np.float32)
+        del fmri_movie10
+
+        if average_repeat_runs:
+
+            # Average the fMRI responses across the two repeats for 'figures'
+            keys_all = fmri.keys()
+            figures_splits = 12
+            for s in range(figures_splits):
+                movie = 'figures' + format(s+1, '02')
+                keys_movie = [rep for rep in keys_all if movie in rep]
+                fmri[movie] = ((fmri[keys_movie[0]] + fmri[keys_movie[1]]) / 2).astype(np.float32)
+                del fmri[keys_movie[0]]
+                del fmri[keys_movie[1]]
+            # Average the fMRI responses across the two repeats for 'life'
+            keys_all = fmri.keys()
+            life_splits = 5
+            for s in range(life_splits):
+                movie = 'life' + format(s+1, '02')
+                keys_movie = [rep for rep in keys_all if movie in rep]
+                fmri[movie] = ((fmri[keys_movie[0]] + fmri[keys_movie[1]]) / 2).astype(np.float32)
+                del fmri[keys_movie[0]]
+                del fmri[keys_movie[1]]
+
+        ### Output ###
+        keys = fmri.keys()
+        if v: print("fmri:", len(keys), list(keys)[:5] )
+
     return fmri
 
 
@@ -127,7 +133,7 @@ def load_stimulus_features_friends_s7(root_data_dir):
 
 
 
-
+'''
 def align_features_and_fmri_samples(features, fmri, excluded_samples_start,
     excluded_samples_end, hrf_delay, stimulus_window, movies, v=False):
     """
@@ -242,7 +248,7 @@ def align_features_and_fmri_samples(features, fmri, excluded_samples_start,
 
     ### Output ###
     return aligned_features, aligned_fmri
-
+''';
 
 def align_features_and_fmri_samples_friends_s7(features_friends_s7,
     root_data_dir):
@@ -320,7 +326,7 @@ def align_features_and_fmri_samples_friends_s7(features_friends_s7,
 
 
 
-def compute_encoding_accuracy(fmri_val, fmri_val_pred, subject, modality):
+def compute_encoding_accuracy(fmri_val, fmri_val_pred, subject=None, modality=None):
     """
     Compare the  recorded (ground truth) and predicted fMRI responses, using a
     Pearson's correlation. The comparison is perfomed independently for each
@@ -332,11 +338,6 @@ def compute_encoding_accuracy(fmri_val, fmri_val_pred, subject, modality):
         fMRI responses for the validation movies.
     fmri_val_pred : float
         Predicted fMRI responses for the validation movies
-    subject : int
-        Subject number used to train and validate the encoding model.
-    modality : str
-        Feature modality used to train and validate the encoding model.
-
     """
 
     ### Correlate recorded and predicted fMRI responses ###
@@ -348,7 +349,7 @@ def compute_encoding_accuracy(fmri_val, fmri_val_pred, subject, modality):
     return encoding_accuracy, mean_encoding_accuracy
 
 def plot_accuracy_on_brain(encoding_accuracy, mean_encoding_accuracy, subject, title, \
-                           root_data_dir=root_data_dir, vmin=0,vmax=1):
+                           root_data_dir=root_data_dir, vmin=0,vmax=0.7):
     ### Map the prediction accuracy onto a 3D brain atlas for plotting ###
     atlas_file = f'sub-0{subject}_space-MNI152NLin2009cAsym_atlas-Schaefer18_parcel-1000Par7Net_desc-dseg_parcellation.nii.gz'
     atlas_path = os.path.join(root_data_dir, 'algonauts_2025.competitors', 'fmri', f'sub-0{subject}', 'atlas', atlas_file)
@@ -464,10 +465,10 @@ def load_stimulus_features(root_data_dir, modalities=['visual', 'audio', 'langua
 
 
 def align_features_and_fmri_samples(features, fmri, excluded_samples_start, excluded_samples_end,\
-                                    hrf_delay, stimulus_window, stim_sets, v=False):
+                                    hrf_delay, stimulus_window, stim_sets, v=False, n_targets=1000, custom_episodes=[]):
     # initialize empty array with 1000 parcels
     # this will return a matrix of concatenated timepoints across episodes/movies x 1000 parcels
-    aligned_fmri = np.empty((0, 1000), dtype=np.float32) 
+    aligned_fmri = np.empty((0, n_targets), dtype=np.float32) 
     # the feature matrix will have the same # of timepoints as the aligned_fmri matrix
     aligned_features = []
 
@@ -476,13 +477,18 @@ def align_features_and_fmri_samples(features, fmri, excluded_samples_start, excl
     for stimset in stim_sets:
         # stimset e.g. "s01", "s02", ... "bourne", "life", ...
         # but also acommodating their style: "friends-s01", "movie10-bourne" ...
-        stimset = stimset.split("-")[-1]
-        episodes_in_set = [key for key in fmri if key.startswith(stimset)]
+        if stimset == "custom_episodes":
+            episodes_in_set = custom_episodes;
+        else:
+            stimset = stimset.split("-")[-1]
+            episodes_in_set = [key for key in fmri if key.startswith(stimset)]
+        
         if v>=1: print(stimset, len(episodes_in_set), episodes_in_set[:3])
 
         for episode in episodes_in_set:
             fmri_run = fmri[episode][excluded_samples_start:-excluded_samples_end]
             n_trs = len(fmri_run)
+            #print(n_trs, aligned_fmri.shape, fmri_run.shape )
             aligned_fmri = np.append(aligned_fmri, fmri_run, 0)
 
             if isfirst and v>=2: print("\nsplit", episode, fmri_run.shape)

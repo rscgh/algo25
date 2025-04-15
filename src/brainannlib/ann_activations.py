@@ -8,7 +8,7 @@
 from functools import partial
 import collections, re, sys, os
 import numpy as np
-from brainannlib.stats_and_metrics import tqdm_mem_stats, matrix_information
+#from brainannlib.stats_and_metrics import tqdm_mem_stats, matrix_information
 
 root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
 activations_path = os.path.join(root_data_dir, "ann_brain_data/activations")
@@ -44,9 +44,7 @@ def iter_modules(curr_module, descriptor = "", mod_dict = {}, plain_style=False,
 
   return mod_dict;
 
-
-
-
+from transformers.utils import ModelOutput
 def save_activations(activations, name, print_layerinout, module, inp, out):
   """
   A function that saves the current activations of a given pytorch module 
@@ -66,7 +64,7 @@ def save_activations(activations, name, print_layerinout, module, inp, out):
   
   # in case out contains more than one element (e.g. activations, and attentions)
   # only return the furst
-  if isinstance(out, tuple): out = out[0]
+  if isinstance(out, tuple) or isinstance(out, ModelOutput): out = out[0]
   activations[name].append(out.detach().cpu().float().numpy())
 
 
@@ -120,7 +118,7 @@ def add_activation_hooks_to_layers(model, include_layers_containing, print_layer
   for name in md.keys():
     if not comp_fn(name, include_layers_containing): continue;
     if verbose: print("Adding hook to:", name) # end=", ");
-    h1 = md[name].register_forward_hook(partial(save_activations, actv, name, print_stats, print_layerinout))
+    h1 = md[name].register_forward_hook(partial(save_activations, actv, name, print_layerinout))
     hooks.append(h1)
     hook_layer_dict.update({name: md[name]})
 

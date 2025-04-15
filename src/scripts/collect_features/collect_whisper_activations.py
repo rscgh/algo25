@@ -204,13 +204,19 @@ for snum, (stim_name, stim_path) in t:
             cols = np.stack([indices - i for i in range(n_before, 0, -1)], axis=1)  # Shape (n_batch, n_before)
             feat_map = feat_map[rows, cols] # shape (n_batch, n_before, n_hidden)
             fshapes.append(feat_map.shape)
-            feat_map = feat_map.reshape((len(feat_map),-1)) # flatten
+            #feat_map = feat_map.reshape((len(feat_map),-1)) # flatten
             fshapes.append(feat_map.shape)
             if snum < 5: print(layer_name, fshapes)
             red_actv[layer_name].append(feat_map)
             actv[layer_name] = []
     
     #for h in hooks: h.remove()
+
+    # concatenate across batches for each layer for the last Token embeddings for the video stimulus
+    #fn = f"{actv_dir}/actv-{model_name}-{stim_name}-2sCNKperTR-last{n_before}token.npy"
+    embd_dict = {layer_name: np.concatenate(red_actv[layer_name], axis=0) for layer_name in layers}
+    if snum < 5: print("Saving", fn ,layers[0], embd_dict[layers[0]].shape)
+    np.save(fn, embd_dict)
 
     # concatenate across batches for each layer for the SRP embeddings for the video stimulus
     fn = f"{actv_dir}/actv-{model_name}-{stim_name}-2sCNKperTR-sc-srp6000.npy"
@@ -220,9 +226,6 @@ for snum, (stim_name, stim_path) in t:
         print(layers[0], embd_dict[layers[0]].shape)
     np.save(fn, embd_dict)
 
-    # concatenate across batches for each layer for the last Token embeddings for the video stimulus
-    embd_dict = {layer_name: np.concatenate(red_actv[layer_name], axis=0) for layer_name in layers}
-    if snum < 5: print("Saving", fn ,layers[0], embd_dict[layers[0]].shape)
-    np.save(fn, embd_dict)
+    
     
     

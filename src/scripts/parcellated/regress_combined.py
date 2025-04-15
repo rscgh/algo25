@@ -6,6 +6,8 @@
 
 import os, sys
 import numpy as np
+import pickle as pk
+import zipfile
 
 from brainannlib.algonauts_funcs import load_stimulus_features, load_fmri, align_features_and_fmri_samples
 from brainannlib.algonauts_funcs import compute_encoding_accuracy
@@ -33,7 +35,7 @@ print("language:", lang_features["s01e01a"].shape)
 fn= os.path.join(acc_dir, f"actv-whisper-small-algonauts_all_train-2sCNKperTR-last4token.pca2000.npy");
 audio_features = np.load(fn, allow_pickle=True).item()
 audio_features = {k.split("_")[-1]: v for k,v in audio_features.items()}
-audio_features = {k:v[:,:500] for k,v in lang_features.items()}
+audio_features = {k:v[:,:500] for k,v in audio_features.items()}
 print("audio:", audio_features["s01e01a"].shape)
 
 # load visual features (tutorial had: 250)
@@ -46,13 +48,10 @@ print("visual:", features_visual["s01e01a"].shape)
 # using their functions
 enc_features ={"language":lang_features,"audio":audio_features, "visual":features_visual}
 
-import pickle as pk
-
-import zipfile
 
 # use all seasons/full-movies as training data
 movies_train = all_movie_sets; 
-baseline_models={}
+models={}
 
 # Fitting the model for each of the subjects 
 for s in [1, 2, 3, 5]:
@@ -74,7 +73,7 @@ for s in [1, 2, 3, 5]:
       # saving the regression-model as pkl, so it can be readily loaded later on
       pk.dump(model, open(fn,"wb"))
       print("Saved:", fn)
-      baseline_models[sub] = model;
+      models[sub] = model;
       
       # for each of the seasons/full-movies, check how well out model is doing
       for vstim in all_movie_sets:
@@ -89,6 +88,9 @@ for s in [1, 2, 3, 5]:
             print(vstim, (15-len(vstim))*" ", mean_encoding_accuracy, "  ", "train" if vstim in movies_train else "test\033[0m")
       
 
+
+#fn= os.path.join(acc_dir, f"models_comb_smolwhispr50_trained_on_all.npy");
+#np.save(fn, models)
 
 # align_features_friends_s7 is just a more compact function for preparation of the test data features
 from brainannlib.algonauts_funcs import align_features_friends_s7
@@ -105,7 +107,7 @@ for s in [1, 2, 3, 5]:
 
     for movie, mvfeat in s7feats[sub].items():
         # Predict fMRI responses for the aligned features of this episode, and
-        fmri_pred = baseline_models[sub].predict(mvfeat).astype(np.float32)
+        fmri_pred = models[sub].predict(mvfeat).astype(np.float32)
         submission_predictions[sub][movie] = fmri_pred
         if movie=="s07e03b": print(f"predictions for {sub} episode {movie}:", fmri_pred.shape)
 
