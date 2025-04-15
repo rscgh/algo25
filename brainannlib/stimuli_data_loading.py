@@ -101,7 +101,7 @@ from decord import  AudioReader, cpu
 from torch.utils.data.dataset import Dataset
 
 class DecordAudioDataset(Dataset):
-    def __init__(self, file_path, transform=None, step_size_s=1, chunk_size_s=2, v=False):
+    def __init__(self, file_path, transform=None, step_size_s=1, chunk_size_s=2, v=False,  pad=False):
         self.file_path= file_path
         self.ar = AudioReader(self.file_path, ctx=cpu(0), mono=True, #default setting 
             sample_rate=48000) # enforce this sample rate, and convert if nessesary
@@ -129,7 +129,8 @@ class DecordAudioDataset(Dataset):
         if v: print(np.unique(self.chunk_end_idx-self.chunk_start_idx, return_counts=1))
         
         self.transform = transform;
-        
+        self.pad=pad
+
     def __len__(self): return len(self.chunk_start_idx)
     
     def __getitem__(self, idx):  
@@ -137,15 +138,16 @@ class DecordAudioDataset(Dataset):
         end = self.chunk_end_idx[idx]
         track = self.ar._array[0, start:end]
             
-        if self.transform is None:
+        if self.transform is None and self.pad:
             padding_needed= self.chunk_size - len(track);
             if padding_needed>0:
                 track = np.pad(track, (padding_needed, 0), 'constant', constant_values=0)
         
-        rawtrack = track.reshape(1, -1)
+        track = track.reshape(1, -1)
+        raw_track_len=track.shape[-1]
         attn_mask = 0;
         if self.transform is not None:
-            prep_track = self.transform(rawtrack)
+            prep_track = self.transform(track)
             track=prep_track;
             
             if hasattr(prep_track, "input_features"):
@@ -154,7 +156,8 @@ class DecordAudioDataset(Dataset):
                 track = prep_track.input_values[0];
             #print(track.shape)
                 
-            attn_mask = prep_track.attention_mask[0] if hasattr(prep_track, "attention_mask") else rawtrack.shape[-1];
+            attn_mask = prep_track.attention_mask[0] \
+              if hasattr(prep_track, "attention_mask") else raw_track_len;
         
         return track, attn_mask
     

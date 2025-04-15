@@ -14,9 +14,9 @@ actv_dir = os.path.join(root_data_dir, "ann_brain_data/activations")
 acc_dir= f"{root_data_dir}/ann_brain_data/outputs"
 
 
-#########################################################################
+####################################################################################################################
 # BEATsIter3p - 4 Layers, Raw activations for every 10th token
-#########################################################################
+####################################################################################################################
 
 # find the activation file collected for each of the movie clips
 path=f"/scratch-scc/users/robert.scholz2/ann_brain_data/activations/*BEATs*raw.npy"
@@ -31,8 +31,10 @@ print("Found ANN activations:", len(all_actvs), all_actvs[:3], mvid(all_actvs[0]
 # Now we concatenate the activations for all friends episodes
 # but spare the typical test set (e.g. season7, most of movie10)
 features = []
-sl = slice(0,-93)
-for i, stim_activations_file in tqdm(enumerate(all_actvs[sl]), total=len(all_actvs[sl])):
+
+selected_files = [f for f in all_actvs if ("friends_s0" in f and not("friends_s07" in f))]
+print("#selected files:", len(selected_files))
+for i, stim_activations_file in tqdm(enumerate(selected_files), total=len(selected_files)):
     x=np.load(stim_activations_file, allow_pickle=1).item()
     # x[layer_name] has shape for the first clip: (405, 11, 768)
     data = np.concatenate([x[k].reshape((x[k].shape[0],-1)) for k in x.keys()], axis=1)
@@ -87,18 +89,420 @@ fn= os.path.join(acc_dir, f"actv-BEATsIter3p-algonauts_all_train-4LrawEv10tok.pc
 np.save(fn, features)
 
 
-#########################################################################
+####################################################################################################################
 # dinov2Lftimagenet1k - 4 Layers, only the CLS token per layer
-#########################################################################
+####################################################################################################################
 # the CLS token may only be actually meaningfull in the last layer
 
 # Layers: ['dinov2.encoder.layer.0', 'dinov2.encoder.layer.8', 
 #       'dinov2.encoder.layer.15', 'dinov2.encoder.layer.23'])
 
+# Finding all the saved activations/embeddings from SmolLM2
+mode="-4layers_clsEmbd"
+model_name="dinov2Lftimagenet1k"
+path=f"{actv_dir}/*{model_name}*{mode}.npy"
+mvid = lambda x : x.split("/")[-1].split("-")[2]
+
+all_actvs = glob(path);
+all_actvs.sort()
+print("Found ANN activations (target=385):", len(all_actvs), "\n",\
+      np.array(all_actvs[:3]), "\n", mvid(all_actvs[0]))
+
 """
-# INdividual clip activations shape
+fn="/scratch-scc/users/robert.scholz2/cneuromod/ann_brain_data/activations/actv-dinov2Lftimagenet1k-bourne02-eqsTR1.49s-4layers_clsEmbd.npy"
+x=np.load(fn, allow_pickle=1).item()
+for k in x.keys():
+    print(k, x[k].shape)
+
+# Individual clip activations shape
 dinov2.encoder.layer.0 (405, 1024)
 dinov2.encoder.layer.8 (405, 1024)
 dinov2.encoder.layer.15 (405, 1024)
 dinov2.encoder.layer.23 (405, 1024)
 """;
+
+###---------------------------------------------------------------------
+## Step 1: creation of the feautre reduction pipeline
+
+# Now we concatenate the activations for all friends episodes
+# but spare the typical test set (e.g. season7, most of movie10)
+features = []
+sl = slice(0,-93)
+for i, stim_activations_file in tqdm(enumerate(all_actvs[sl]), total=len(all_actvs[sl])):
+    x=np.load(stim_activations_file, allow_pickle=1).item()
+    data = np.concatenate([x[k] for k in x.keys()], axis=1)
+    data = data.astype(np.float32);
+    if i< 10: print(mvid(stim_activations_file), data.shape)#
+    features.append(data)
+
+features = np.concatenate(features, axis=0)
+print(features.shape) #(136503, 4096)
+
+# To further reduce the amount of data (and make sure the data fits into memory)
+# we take only every 3rd TR sample
+print("prev size:", features.nbytes / (1024**2))
+features = features[::3,:] # to keep below 48,838
+print("new size:", features.nbytes / (1024**2))
+print("Has NaNs? ->", np.isnan(features).any())
+
+## This is the acutal feature reduction pipeline
+# z-score the features
+scaler = StandardScaler()
+scaler.fit(features)
+features = scaler.transform(features)
+print(features.shape)
+
+# do the final PCA step
+# reducing (136503, 4096) to 2000 takes 3:30min with randomized solver
+n_components = 2000
+pca = PCA(n_components=n_components, random_state=1001, svd_solver="randomized")
+pca.fit(features[:, :])
+print("Var expl:", pca.explained_variance_ratio_.sum() )
+
+## save all this as a pipeline
+feat_reduction = make_pipeline(scaler, pca)
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.feat_reduction.pkl");
+pk.dump(feat_reduction, open(fn,"wb"))
+
+
+###---------------------------------------------------------------------
+## Step 2: apply it to all clips/episodes
+
+features = {}
+sl = slice(None)
+for i, stim_activations_file in tqdm(enumerate(all_actvs[sl]), total=len(all_actvs[sl])):
+    x=np.load(stim_activations_file, allow_pickle=1).item()
+    data = np.concatenate([x[k] for k in x.keys()], axis=1)
+    data = data.astype(np.float32);
+    data = feat_reduction.transform(data)
+    features[mvid(stim_activations_file)]= data
+
+print(features.keys(), features["friends_s02e01a"].shape);
+#dict_keys(['bourne01', ...]) (477, 2000)
+
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.npy";
+np.save(fn, features)
+
+# '{acc_dir}/actv-dinov2Lftimagenet1k-algonauts_all_train--4layers_clsEmbd.pca2000.npy'
+
+
+
+
+####################################################################################################################
+# SmolLM-v2 1.B untrained - 4 Layers, only the last token per layer
+####################################################################################################################
+
+from sklearn.random_projection import johnson_lindenstrauss_min_dim
+from sklearn.random_projection import SparseRandomProjection
+
+# Finding all the saved activations/embeddings from SmolLM2
+mode="last500words"
+model_name="SmolLM2_1.7B_untr"
+
+path=f"{actv_dir}/*{model_name}*{mode}.npy"
+mvid = lambda x : x.split("/")[-1].split("-")[2]
+all_actvs = glob(path);
+all_actvs.sort()
+print("Found ANN activations:", len(all_actvs), "\n",\
+      np.array(all_actvs[:3]), "\n", mvid(all_actvs[0]))
+
+print(mvid(all_actvs[0]))
+
+###---------------------------------------------------------------------
+## Step 0: checking out the collected activations for each episode
+fn=all_actvs[0]
+print(fn)
+x=np.load(fn)
+print(x.shape) 
+
+# actv-SmolLM2-1.7B-friends_s01e01a-last5trs.npy
+# actv-SmolLM2-1.7B-friends_s01e01a-last500wodslast5trs.npy
+# both have shape: (5, 591, 6, 2048)
+
+# actv-SmolLM2_1.7B_untr-friends_s01e01a-4L_6tok_last500words
+# switching layer and timepoint dimension, 
+# only keeping the activations to the last token
+data = np.swapaxes(x, 0,1)[:,:,:,:]
+data = data.reshape(data.shape[0], -1)
+print(data.shape)
+
+###---------------------------------------------------------------------
+## Step 1: creation of the feautre reduction pipeline
+
+# Now we concatenate the activations for all friends episodes
+# but spare the typical test set (e.g. season7, most of movie10)
+features = []
+
+selected_files = [f for f in all_actvs if ("friends_s0" in f and not("friends_s07" in f))]
+print("#selected files:", len(selected_files))
+
+for i, stim_activations_file in tqdm(enumerate(selected_files), total=len(selected_files)):
+    x=np.load(stim_activations_file)
+    data = np.swapaxes(x, 0,1)[:,:,:,:]
+    data = data.reshape(data.shape[0], -1)
+    data = data.astype(np.float32);
+    if i< 3: print(mvid(stim_activations_file), data.shape)#
+    features.append(data)
+
+features = np.concatenate(features, axis=0)
+print(features.shape)
+
+# To further reduce the amount of data (and make sure the data fits into memory)
+# we take only every 3rd TR sample
+print("prev size:", features.nbytes / (1024**2))
+features = features[::3,:] # to keep below 48,838
+print("new size:", features.nbytes / (1024**2))
+print("Has NaNs? ->", np.isnan(features).any())
+
+# z-score the features again because needed for PCA
+scaler2 = StandardScaler()
+scaler2.fit(features)
+features = scaler2.transform(features)
+print(features.shape)
+
+# estimate the approx needed number of components
+n_proj = johnson_lindenstrauss_min_dim(features.shape[0], eps=0.1)
+print(n_proj)
+# then downproject using SRP to reduce the number of features 
+# maybe not always necessary
+srp = SparseRandomProjection(n_components = n_proj, random_state=1002)
+features = srp.fit_transform(features)
+print(features.shape, "after SRP")
+
+## This is the acutal feature reduction pipeline
+# z-score the features
+scaler = StandardScaler()
+scaler.fit(features)
+features = scaler.transform(features)
+print(features.shape)
+
+# do the final PCA step
+# reducing (136503, 4096) to 2000 takes 30mins with randomized solver
+n_components = 2000
+#pca = PCA(n_components=n_components, random_state=1001, svd_solver="randomized")
+pca = PCA(n_components=n_components, random_state=1001, svd_solver="full")
+pca.fit(features[:, :])
+print("Var expl:", pca.explained_variance_ratio_.sum() )
+
+## save all this as a pipeline
+#feat_reduction = make_pipeline(scaler, pca)
+feat_reduction = make_pipeline(scaler2, srp, scaler, pca)
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.feat_reduction.pkl";
+print(fn)
+pk.dump(feat_reduction, open(fn,"wb"))
+#88M /scratch-scc/users/robert.scholz2/cneuromod/ann_brain_data/outputs/actv-SmolLM2_1.7B_untr-algonauts_all_train-last500words.pca2000.feat_reduction.pkl
+
+
+###---------------------------------------------------------------------
+## Step 2: apply it to all clips/episodes
+
+features = {}
+sl = slice(None)
+for i, stim_activations_file in tqdm(enumerate(all_actvs[sl]), total=len(all_actvs[sl])):
+    x=np.load(stim_activations_file, allow_pickle=1).item()
+    data = np.concatenate([x[k].reshape((x[k].shape[0],-1)) for k in x.keys()], axis=1)
+    data = data.astype(np.float32);
+    data = feat_reduction.transform(data)
+    features[mvid(stim_activations_file)]= data
+
+print(features.keys(), features["friends_s02e01a"].shape);
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.npy";
+
+np.save(fn, features)
+
+
+
+
+####################################################################################################################
+# SmolLM-v2 1.B version2 - 4 Layers, only the last token per layer
+####################################################################################################################
+
+# Finding all the saved activations/embeddings from SmolLM2
+mode="last500wods"
+model_name="SmolLM2"
+# Finding all the saved activations/embeddings from SmolLM2
+path=f"/scratch-scc/users/robert.scholz2/ann_brain_data/activations/*SmolLM2*{mode}*.npy"
+mvid = lambda x : x.split("/")[-1].split("-")[3]
+all_actvs = glob(path);
+all_actvs.sort()
+print("Found ANN activations:", len(all_actvs), all_actvs[:3], mvid(all_actvs[0]))
+print(mvid(all_actvs[0]))
+
+###---------------------------------------------------------------------
+## Step 0: checking out the collected activations for each episode
+fn=all_actvs[0]
+print(fn)
+x=np.load(fn)
+print(x.shape)  # (5, 591, 6, 2048)
+data = np.swapaxes(x, 0,1)[:,:,-1,:]
+print(data.shape) #(591, 5, 2048)
+data = data.reshape(data.shape[0], -1)
+print(data.shape) #(591, 10240)
+
+###---------------------------------------------------------------------
+## Step 1: creation of the feautre reduction pipeline
+
+# Now we concatenate the activations for all friends episodes
+# but spare the typical test set (e.g. season7, most of movie10)
+features = []
+
+selected_files = [f for f in all_actvs if ("friends_s0" in f and not("friends_s07" in f))]
+print("#selected files:", len(selected_files))
+
+for i, stim_activations_file in tqdm(enumerate(selected_files), total=len(selected_files)):
+    x=np.load(stim_activations_file)
+    data = np.swapaxes(x, 0,1)[:,:,-1,:]
+    data = data.reshape(data.shape[0], -1)
+    data = data.astype(np.float32);
+    if i< 3: print(mvid(stim_activations_file), data.shape)#
+    features.append(data)
+
+features = np.concatenate(features, axis=0)
+print(features.shape)
+
+# To further reduce the amount of data (and make sure the data fits into memory)
+# we take only every 3rd TR sample
+print("prev size:", features.nbytes / (1024**2))
+features = features[::3,:] # to keep below 48,838
+print("new size:", features.nbytes / (1024**2))
+print("Has NaNs? ->", np.isnan(features).any())
+
+## This is the acutal feature reduction pipeline
+# z-score the features
+scaler = StandardScaler()
+scaler.fit(features)
+features = scaler.transform(features)
+print(features.shape)
+
+# do the final PCA step
+# reducing (136503, 4096) to 2000 takes 30mins with randomized solver
+n_components = 2000
+pca = PCA(n_components=n_components, random_state=1001, svd_solver="randomized")
+pca.fit(features[:, :])
+print("Var expl:", pca.explained_variance_ratio_.sum() )
+
+## save all this as a pipeline
+#feat_reduction = make_pipeline(scaler, pca)
+feat_reduction = make_pipeline(scaler, pca)
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.feat_reduction.pkl";
+print(fn)
+pk.dump(feat_reduction, open(fn,"wb"))
+
+###---------------------------------------------------------------------
+## Step 2: apply it to all clips/episodes
+
+features = {}
+sl = slice(None)
+for i, stim_activations_file in tqdm(enumerate(all_actvs[sl]), total=len(all_actvs[sl])):
+    x=np.load(stim_activations_file)
+    data = np.swapaxes(x, 0,1)[:,:,-1,:]
+    data = data.reshape(data.shape[0], -1)
+    data = data.astype(np.float32);
+    data = feat_reduction.transform(data)
+    features[mvid(stim_activations_file)]= data
+
+print(features.keys(), features["friends_s02e01a"].shape);
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.npy";
+
+np.save(fn, features)
+# 1.4G /scratch-scc/users/robert.scholz2/cneuromod/ann_brain_data/outputs/
+# actv-SmolLM2-algonauts_all_train-last500wordsV2.pca2000.npy
+
+
+
+
+####################################################################################################################
+# Llama_3.1_8B - 4 Layers, only the last token per layer
+####################################################################################################################
+
+mode="4L_6tok_last500words"
+model_name="Llama_3.1_8B"
+path=f"{actv_dir}/*{model_name}*{mode}.npy"
+mvid = lambda x : x.split("/")[-1].split("-")[2]
+all_actvs = glob(path);
+all_actvs.sort()
+print("Found ANN activations:", len(all_actvs), "\n",\
+      np.array(all_actvs[:3]), "\n", mvid(all_actvs[0]))
+print(mvid(all_actvs[0]))
+
+###---------------------------------------------------------------------
+## Step 0: checking out the collected activations for each episode
+fn=all_actvs[0]
+print(fn)
+x=np.load(fn)
+print(x.shape) 
+
+# switching layer and timepoint dimension, 
+# only keeping the activations to the last token
+data = np.swapaxes(x, 0,1)[:,:,-1,:]
+print(data.shape)
+data = data.reshape(data.shape[0], -1)
+print(data.shape)
+
+###---------------------------------------------------------------------
+## Step 1: creation of the feautre reduction pipeline
+
+# Now we concatenate the activations for all friends episodes
+# but spare the typical test set (e.g. season7, most of movie10)
+features = []
+
+selected_files = [f for f in all_actvs if ("friends_s0" in f and not("friends_s07" in f))]
+print("#selected files:", len(selected_files))
+
+for i, stim_activations_file in tqdm(enumerate(selected_files), total=len(selected_files)):
+    x=np.load(stim_activations_file)
+    data = np.swapaxes(x, 0,1)[:,:,-1,:]
+    data = data.reshape(data.shape[0], -1)
+    data = data.astype(np.float32);
+    if i< 3: print(mvid(stim_activations_file), data.shape)#
+    features.append(data)
+
+features = np.concatenate(features, axis=0)
+print(features.shape)
+
+# To further reduce the amount of data (and make sure the data fits into memory)
+# we take only every 3rd TR sample
+print("prev size:", features.nbytes / (1024**2))
+features = features[::3,:] # to keep below 48,838
+print("new size:", features.nbytes / (1024**2))
+print("Has NaNs? ->", np.isnan(features).any())
+
+
+## This is the acutal feature reduction pipeline
+# z-score the features
+scaler = StandardScaler()
+scaler.fit(features)
+features = scaler.transform(features)
+print(features.shape)
+
+# do the final PCA step
+# reducing (136503, 4096) to 2000 takes 30mins with randomized solver
+n_components = 2000
+pca = PCA(n_components=n_components, random_state=1001, svd_solver="randomized")
+pca.fit(features[:, :])
+print("Var expl:", pca.explained_variance_ratio_.sum() )
+
+## save all this as a pipeline
+#feat_reduction = make_pipeline(scaler, pca)
+feat_reduction = make_pipeline(scaler, pca)
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.feat_reduction.pkl";
+print(fn)
+pk.dump(feat_reduction, open(fn,"wb"))
+
+###---------------------------------------------------------------------
+## Step 2: apply it to all clips/episodes
+
+features = {}
+sl = slice(None)
+for i, stim_activations_file in tqdm(enumerate(all_actvs[sl]), total=len(all_actvs[sl])):
+    x=np.load(stim_activations_file)
+    data = np.swapaxes(x, 0,1)[:,:,-1,:]
+    data = data.reshape(data.shape[0], -1)
+    data = data.astype(np.float32);
+    data = feat_reduction.transform(data)
+    features[mvid(stim_activations_file)]= data
+
+print(features.keys(), features["friends_s02e01a"].shape);
+fn= f"{acc_dir}/actv-{model_name}-algonauts_all_train-{mode}.pca2000.npy";
+
+np.save(fn, features)
