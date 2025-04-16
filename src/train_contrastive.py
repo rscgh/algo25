@@ -138,6 +138,7 @@ def train(model, dataloader, optimizer, opts, epoch, writer):
 
         if (idx + 1) % opts.print_freq == 0:
             print(f"Train: [{epoch}][{idx + 1}/{len(dataloader)}]:\t"
+                  f"DT {data_time.avg:.3f}\t"
                   f"BT {batch_time.avg:.3f}\t"
                   f"ETA {datetime.timedelta(seconds=eta)}\t"
                   f"loss {loss.avg:.3f}\t")
@@ -159,14 +160,24 @@ def main():
     run_name = (f"{opts.model}_{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
                 f"wd{opts.weight_decay}_bsz{opts.batch_size}_ts{opts.timesample}_"
                 f"epochs{opts.epochs}_s{opts.trial}")
+
     tb_dir = os.path.join(opts.save_dir, "tensorboard", run_name)
     save_dir = os.path.join(opts.save_dir, "models", run_name)
     opts.save_dir = save_dir
     os.makedirs(tb_dir, exist_ok=True)
     os.makedirs(save_dir, exist_ok=True)
 
+    if opts.restore:  # change run name for wandb only (local files will be saved in the same folder)
+        run_name = f"{run_name}_restore"
+
     wandb.init(project="algonauts-challenge-2025", name=run_name, config=opts, sync_tensorboard=True)
     writer = torch.utils.tensorboard.SummaryWriter(tb_dir)
+
+    packages = util.get_packages_versions()
+    wandb.config.update({"env": packages})
+    print("Packages:")
+    for k, v in packages.items():
+        print(f"{k}=={v}")
 
     preprocess, model = load_model(opts)
     optimizer = load_optimizer(model, opts)
@@ -182,7 +193,7 @@ def main():
         print("Restoring training....")
         print("Attempting to load", save_file)
 
-        checkpoint = torch.load(save_file, map_location=opts.device)
+        checkpoint = torch.load(save_file, map_location=opts.device, weights_only=False)
         if checkpoint['epoch'] >= opts.epochs:
             print(f"Model already trained for {checkpoint['epoch']} epochs")
             exit(0)

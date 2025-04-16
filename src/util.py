@@ -10,6 +10,18 @@ from pathlib import Path
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score, r2_score
 
 
+
+def get_packages_versions():
+    try:
+        from pip._internal.operations import freeze
+    except ImportError:
+        from pip.operations import freeze
+
+
+    pkgs = {p[0]: p[1] for p in [pkg.split("==") for pkg in freeze.freeze() if "file://" not in pkg]}
+    return pkgs
+
+
 class NViewTransform:
     """Create N augmented views of the same image"""
 
