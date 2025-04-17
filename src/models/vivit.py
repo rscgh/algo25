@@ -39,12 +39,12 @@ class VivitMLPContrastive(nn.Module):
 
 
     def encode_video(self, video):
-        return self.video_encoder(**video).pooler_output
+        return self.video_encoder(**video)[0][:, 0, :]
 
 
     def forward(self, video, fmri):
         video_features = self.video_encoder(**video)
-        video_features = self.video_projection(video_features.pooler_output)
+        video_features = self.video_projection(video_features[0][:, 0, :])
 
         fmri_features = self.fmri_encoder(fmri)
 
