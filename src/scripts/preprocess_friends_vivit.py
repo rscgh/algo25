@@ -1,6 +1,6 @@
 """
 Author: Carlo Alberto Barbano <carlo.barbano@unito.it>
-Date: 14/04/25
+Date: 17/04/25
 """
 import models
 import torch
@@ -11,6 +11,7 @@ from torchcodec.decoders import VideoDecoder
 from glob import glob
 from natsort import natsorted
 from tqdm import tqdm
+from transformers import VivitImageProcessor
 
 
 class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
@@ -76,38 +77,36 @@ class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
 @torch.inference_mode()
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str)
     parser.add_argument('--data_dir', type=str)
-    parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--save_dir', type=str)
+    parser.add_argument('--vivit_pretrained', type=str, default="google/vivit-b-16x2-kinetics400")
     args = parser.parse_args()
 
-    # Load the model
-    if args.weights:
-        checkpoint = torch.load(args.weights, map_location=args.device, weights_only=False)
-        model = models.vivit.VivitMLPContrastive(embed_dim=checkpoint['opts'].embed_dim,
-                                                 temperature=checkpoint['opts'].temperature)
-        model.load_state_dict(checkpoint['model'])
-        model = model.to(args.device)
-        image_processor = model.image_processor()
-        print("Model loaded from", args.weights)
-    else:
-        model = models.vivit.VivitMLPContrastive(embed_dim=128, temperature=1.)
-        image_processor = model.image_processor()
-        model = model.to(args.device)
-        print("Model initialized")
+    os.makedirs(args.save_dir, exist_ok=True)
 
-    dataset = FriendsStimuliVideoDataset(args.data_dir, transform=image_processor)
+    vivit_processor = VivitImageProcessor.from_pretrained(args.vivit_pretrained)
+
+    dataset = FriendsStimuliVideoDataset(args.data_dir, transform=vivit_processor)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=10, shuffle=False, num_workers=8, pin_memory=True)
     print("Dataset loaded. Tot chunks:", len(dataset))
 
-    model.eval()
+    chunk_idx = 0
+    last_movie_idx = 0
+
     for idx, (video, movie_idx) in enumerate(tqdm(dataloader)):
-        video = video.to(args.device, non_blocking=True)
-        video['pixel_values'] = video['pixel_values'].squeeze(1)
+        video = video['pixel_values'].squeeze(1)
 
-        features = model.encode_video(video)
+        for chunk, chunk_movie_idx in zip(video, movie_idx):
+            movie_name = os.path.basename(dataset.movies[chunk_movie_idx.item()])
+            output_file = os.path.join(args.save_dir, f"{movie_name}_chunk_{chunk_idx:05d}.pt")
+            torch.save(chunk, output_file)
 
-        # print(f"({idx}/{len(dataloader)}) Video data shape: {video['pixel_values'].shape}, features shape: {features.shape}")
+            chunk_idx += 1
+            if chunk_movie_idx != last_movie_idx:
+                print(f"Saved {movie_name}")
+                last_movie_idx = movie_idx
+
+
 
 if __name__ == '__main__':
     main()
