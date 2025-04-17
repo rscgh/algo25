@@ -16,12 +16,13 @@ from brainannlib.algonauts_funcs import load_fmri
 
 class FriendsDataset(Dataset):
     def __init__(self, root, modalities=["fmri", "video"], image_transform=None, subjects=[1,2,3,5], timesample=1,
-                 target_video_len=32):
+                 target_video_len=32, downsampled=False):
         self.root = root
         self.modalities = modalities
         self.image_transform = image_transform
         self.timesample = timesample
         self.target_video_len = target_video_len
+        self.downsampled = downsampled
 
         # List all .h5 files in the root directory
         self.fmris = []
@@ -48,7 +49,9 @@ class FriendsDataset(Dataset):
         print("Loaded", len(self.fmris), "fmri files, total samples:", self.tot_samples)
 
     def load_movie(self, movie_name) -> VideoDecoder:
-        movie_folder = os.path.join(self.root, "algonauts_2025.competitors", "stimuli", "movies", "friends")
+        movie_folder = os.path.join(self.root, "algonauts_2025.competitors", "stimuli", "movies")
+        movie_folder = os.path.join(movie_folder, "friends_224" if self.downsampled else "friends")
+
         season = int(movie_name[1:3])
         episode_path = os.path.join(movie_folder, f"s{season}", f"friends_{movie_name}.mkv")
 

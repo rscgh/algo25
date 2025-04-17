@@ -26,6 +26,7 @@ def parse_args():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--data_dir", type=str, required=True, help="Directory containing the dataset")
     parser.add_argument("--save_dir", type=str, required=True, help="Directory to save the trained model")
+    parser.add_argument('--downsampled', action='store_true', help='Use downsampled videos')
 
     # misc
     parser.add_argument('--device', help="device to use", type=str, default='cuda')
@@ -157,7 +158,7 @@ def main():
     opts = parse_args()
     util.set_seed(opts.trial)
 
-    run_name = (f"{opts.model}_{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
+    run_name = (f"{opts.model}_{'downsampled_' if opts.downsampled else ''}{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
                 f"wd{opts.weight_decay}_bsz{opts.batch_size}_ts{opts.timesample}_"
                 f"epochs{opts.epochs}_s{opts.trial}")
 
@@ -183,7 +184,8 @@ def main():
     optimizer = load_optimizer(model, opts)
 
     # Load dataset
-    dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess)
+    dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
+                             downsampled=opts.downsampled)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, num_workers=8,
                                              pin_memory=True, prefetch_factor=2)
 
