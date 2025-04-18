@@ -49,8 +49,9 @@ class FriendsDataset(Dataset):
         print("Loaded", len(self.fmris), "fmri files, total samples:", self.tot_samples)
 
     def load_movie(self, movie_name) -> VideoDecoder:
-        movie_folder = os.path.join(self.root, "algonauts_2025.competitors", "stimuli", "movies")
-        movie_folder = os.path.join(movie_folder, "friends_224" if self.downsampled else "friends")
+        movie_folder = os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies/friends")
+        if self.downsampled:
+            movie_folder = os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies_224/friends")
 
         season = int(movie_name[1:3])
         episode_path = os.path.join(movie_folder, f"s{season}", f"friends_{movie_name}.mkv")

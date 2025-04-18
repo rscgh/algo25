@@ -10,13 +10,14 @@ import subprocess
 from glob import glob
 from natsort import natsorted
 from tqdm import tqdm
+from functools import partial
 
 
-def downsample_movie(movie):
-    target_path = movie.replace("movies/friends", "movies/friends_224")
+def downsample_movie(movie, target, size=224):
+    target_path = movie.replace(f"movies/{target}", f"movies_{size}/{target}")
     os.makedirs(os.path.dirname(target_path), exist_ok=True)
 
-    command = f"ffmpeg -y -i {movie} -vf scale=224:224 {target_path}"
+    command = f"ffmpeg -y -i {movie} -vf scale={size}:{size} {target_path}"
 
     with open(os.devnull, "wb") as devnull:
         res = subprocess.call(command.split(" "), stdout=devnull, stderr=devnull)
@@ -29,12 +30,15 @@ def downsample_movie(movie):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data_dir', type=str)
+    parser.add_argument('--target', choices=["friends", "movie10"], default="friends")
+    parser.add_argument('--size', type=int, default=224)
     args = parser.parse_args()
 
-    movies = natsorted(glob(os.path.join(args.data_dir, "algonauts_2025.competitors/stimuli/movies/friends/**/*.mkv")))
+    movies = natsorted(glob(os.path.join(args.data_dir, f"algonauts_2025.competitors/stimuli/movies/{args.target}/**/*.mkv")))
 
+    downsample_fn = partial(downsample_movie, target=args.target, size=args.size)
     with multiprocessing.Pool() as pool:
-        for _ in tqdm(pool.imap_unordered(downsample_movie, movies), total=len(movies)):
+        for _ in tqdm(pool.imap_unordered(downsample_fn, movies), total=len(movies)):
             pass
 
 

@@ -13,6 +13,7 @@ import torch
 import torch.utils.data
 import torch.utils.tensorboard
 import wandb
+import numpy as np
 
 import util
 import models
@@ -182,6 +183,11 @@ def main():
 
     preprocess, model = load_model(opts)
     optimizer = load_optimizer(model, opts)
+
+    trainable_parameters = filter(lambda p: p.requires_grad, model.parameters())
+    tot_trainable = sum([np.prod(p.size()) for p in trainable_parameters])
+    tot_parameters = sum([np.prod(p.size()) for p in model.parameters()])
+    print("Total parameters:", tot_parameters, "Trainable parameters:", tot_trainable)
 
     # Load dataset
     dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
