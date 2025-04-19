@@ -169,6 +169,9 @@ def main():
     os.makedirs(tb_dir, exist_ok=True)
     os.makedirs(save_dir, exist_ok=True)
 
+    print("Saving weights to", save_dir)
+    print("Saving logs to", tb_dir)
+
     if opts.restore:  # change run name for wandb only (local files will be saved in the same folder)
         run_name = f"{run_name}_restore"
 

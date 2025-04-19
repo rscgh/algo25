@@ -6,6 +6,8 @@ import models
 import torch
 import argparse
 import os
+import numpy as np
+import logging
 
 from torchcodec.decoders import VideoDecoder
 from glob import glob
@@ -13,15 +15,23 @@ from natsort import natsorted
 from tqdm import tqdm
 
 
+logging.basicConfig()
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+
+
 class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
-    def __init__(self, root, transform, tr=1.49, timesample=1, target_video_len=32):
+    def __init__(self, root, transform, tr=1.49, timesample=1, target_video_len=32, downsampled=True):
         self.root = root
         self.transform = transform
         self.timesample = timesample
         self.target_video_len = target_video_len
         self.tr = tr
 
-        self.movies = natsorted(glob(os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies/friends/**/*.mkv")))
+        data_dir = os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies/friends/**/*.mkv")
+        if downsampled:
+            data_dir = os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies_224/friends/**/*.mkv")
+        self.movies = natsorted(glob(data_dir))
 
         self.chunks = []
         self.chunk_idx_to_movie_idx = {}
@@ -70,7 +80,7 @@ class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
         lst = [l[0] for l in lst]
         video_data = self.transform(lst, return_tensors="pt")
 
-        return video_data, movie_idx
+        return video_data, movie_idx, chunk_idx
 
 
 @torch.inference_mode()
@@ -96,18 +106,45 @@ def main():
         model = model.to(args.device)
         print("Model initialized")
 
-    dataset = FriendsStimuliVideoDataset(args.data_dir, transform=image_processor)
+    dataset = FriendsStimuliVideoDataset(args.data_dir, transform=image_processor, downsampled=True)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=10, shuffle=False, num_workers=8, pin_memory=True)
     print("Dataset loaded. Tot chunks:", len(dataset))
 
+    output_dir = os.path.join(os.path.dirname(args.weights), "features/friends/")
+    os.makedirs(output_dir, exist_ok=True)
+
+    prev_movie = 0
+    prev_chunk = -1
+    episode_features = []
+
     model.eval()
-    for idx, (video, movie_idx) in enumerate(tqdm(dataloader)):
+    for idx, (video, movie_idx, chunk_idx) in enumerate(tqdm(dataloader)):
         video = video.to(args.device, non_blocking=True)
         video['pixel_values'] = video['pixel_values'].squeeze(1)
-
         features = model.encode_video(video)
 
-        # print(f"({idx}/{len(dataloader)}) Video data shape: {video['pixel_values'].shape}, features shape: {features.shape}")
+        for features_, movie_idx_, chunk_idx_ in zip(features, movie_idx, chunk_idx):
+            if movie_idx_ != prev_movie:
+                movie_name = os.path.basename(dataset.movies[movie_idx_.item()]).replace(".mkv", ".pth")
+                season = int(movie_name[9:10])
+
+                episode_features = torch.stack(episode_features, dim=0)
+                season_path = os.path.join(output_dir, f"s{season}")
+                os.makedirs(season_path, exist_ok=True)
+
+                episode_path = os.path.join(season_path, movie_name)
+                logging.info(f"Saving features for episode {movie_name} to: {episode_path}")
+
+                torch.save(episode_features.cpu(), episode_path)
+                episode_features = []
+                prev_chunk = -1
+
+            episode_features.append(features_)
+
+            assert chunk_idx_ > prev_chunk
+            prev_movie = movie_idx_
+            prev_chunk = chunk_idx_
+
 
 if __name__ == '__main__':
     main()
