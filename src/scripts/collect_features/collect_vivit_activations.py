@@ -126,7 +126,7 @@ def main():
         for features_, movie_idx_, chunk_idx_ in zip(features, movie_idx, chunk_idx):
             if movie_idx_ != prev_movie:
                 movie_name = os.path.basename(dataset.movies[movie_idx_.item()]).replace(".mkv", ".pth")
-                season = int(movie_name[9:10])
+                season = int(movie_name[9:11])
 
                 episode_features = torch.stack(episode_features, dim=0)
                 season_path = os.path.join(output_dir, f"s{season}")
