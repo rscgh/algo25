@@ -4,6 +4,7 @@ Date: 14/04/25
 """
 import models
 import torch
+import torch.multiprocessing as mp
 import argparse
 import os
 import numpy as np
@@ -14,6 +15,9 @@ from glob import glob
 from natsort import natsorted
 from tqdm import tqdm
 
+# mp.set_start_method("spawn", force=True)
+
+TORCHCODEC_DEVICE = "cpu"
 
 logging.basicConfig()
 logger = logging.getLogger()
@@ -36,7 +40,7 @@ class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
         self.chunks = []
         self.chunk_idx_to_movie_idx = {}
         for movie_idx, movie in enumerate(self.movies):
-            decoder = VideoDecoder(movie, device="cpu")
+            decoder = VideoDecoder(movie, device=TORCHCODEC_DEVICE)
             duration = decoder.metadata.duration_seconds
             num_chunks = int(round(duration / self.tr))
             print(f"Movie {movie} has {duration:.2f} seconds and {num_chunks:.2f} chunks of {self.tr:.2f} seconds")
@@ -61,7 +65,7 @@ class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
         start_t = chunk_idx * self.tr
         end_t = (chunk_idx + 1) * self.tr
 
-        decoder = VideoDecoder(movie_path, device="cpu")
+        decoder = VideoDecoder(movie_path, device=TORCHCODEC_DEVICE)
         if end_t > decoder.metadata.duration_seconds:
             end_t = decoder.metadata.duration_seconds
 
@@ -89,6 +93,10 @@ def main():
     parser.add_argument('--weights', type=str)
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--device', type=str, default='cuda')
+    parser.add_argument('--batch_size', type=int, default=10)
+    parser.add_argument('--num_workers', type=int, default=8)
+    parser.add_argument('--downsampled', action='store_true', help="Use downsampled videos (224x224)")
+    parser.add_argument('--amp', action='store_true', help="Use automatic mixed precision")
     args = parser.parse_args()
 
     # Load the model
@@ -106,14 +114,18 @@ def main():
         model = model.to(args.device)
         print("Model initialized")
 
-    dataset = FriendsStimuliVideoDataset(args.data_dir, transform=image_processor, downsampled=True)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=10, shuffle=False, num_workers=8, pin_memory=True)
+    dataset = FriendsStimuliVideoDataset(args.data_dir, transform=image_processor,
+                                         downsampled=args.downsampled)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
+                                             shuffle=False, num_workers=args.num_workers,
+                                             pin_memory=True)
     print("Dataset loaded. Tot chunks:", len(dataset))
 
     output_dir = os.path.join(os.path.dirname(args.weights), "features/friends/")
     os.makedirs(output_dir, exist_ok=True)
 
-    prev_movie = 0
+    curr_movie_idx = 0
+    curr_movie_name = os.path.basename(dataset.movies[0].replace(".mkv", ".pth"))
     prev_chunk = -1
     episode_features = []
 
@@ -121,28 +133,32 @@ def main():
     for idx, (video, movie_idx, chunk_idx) in enumerate(tqdm(dataloader)):
         video = video.to(args.device, non_blocking=True)
         video['pixel_values'] = video['pixel_values'].squeeze(1)
-        features = model.encode_video(video)
+
+        with torch.amp.autocast("cuda", enabled=args.amp):
+            features = model.encode_video(video)
 
         for features_, movie_idx_, chunk_idx_ in zip(features, movie_idx, chunk_idx):
-            if movie_idx_ != prev_movie:
-                movie_name = os.path.basename(dataset.movies[movie_idx_.item()]).replace(".mkv", ".pth")
-                season = int(movie_name[9:11])
+            if movie_idx_ != curr_movie_idx:
+                print(curr_movie_name, curr_movie_name[9:11])
+                season = int(curr_movie_name[9:11])
 
                 episode_features = torch.stack(episode_features, dim=0)
                 season_path = os.path.join(output_dir, f"s{season}")
                 os.makedirs(season_path, exist_ok=True)
 
-                episode_path = os.path.join(season_path, movie_name)
-                logging.info(f"Saving features for episode {movie_name} to: {episode_path}")
+                episode_path = os.path.join(season_path, curr_movie_name)
+                logging.info(f"Saving features for episode {curr_movie_name} to: {episode_path} (shape: {episode_features.shape})")
 
                 torch.save(episode_features.cpu(), episode_path)
                 episode_features = []
                 prev_chunk = -1
+                curr_movie_name = os.path.basename(dataset.movies[movie_idx_.item()]).replace(".mkv", ".pth")
+
 
             episode_features.append(features_)
 
             assert chunk_idx_ > prev_chunk
-            prev_movie = movie_idx_
+            curr_movie_idx = movie_idx_
             prev_chunk = chunk_idx_
 
 
