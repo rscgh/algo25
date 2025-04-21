@@ -91,6 +91,7 @@ class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--weights', type=str)
+    parser.add_argument('--output_dir', type=str, help="output directory (only if weights is None)")
     parser.add_argument('--data_dir', type=str)
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--batch_size', type=int, default=10)
@@ -121,7 +122,10 @@ def main():
                                              pin_memory=True)
     print("Dataset loaded. Tot chunks:", len(dataset))
 
-    output_dir = os.path.join(os.path.dirname(args.weights), "features/friends/")
+    if args.weights:
+        output_dir = os.path.join(os.path.dirname(args.weights), "features/friends/")
+    else:
+        output_dir = os.path.join(args.output_dir, "features/friends/")
     os.makedirs(output_dir, exist_ok=True)
 
     curr_movie_idx = 0

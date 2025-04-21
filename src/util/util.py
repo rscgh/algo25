@@ -203,7 +203,7 @@ def save_model(model, optimizer, opts, epoch, save_file):
     state = {
         'opts': opts,
         'model': state_dict,
-        'optimizer': optimizer.state_dict(),
+        'optimizer': optimizer.state_dict() if optimizer else None,
         'epoch': epoch,
         'run_id': wandb.run.id
     }

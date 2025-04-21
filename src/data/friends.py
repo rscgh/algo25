@@ -6,12 +6,18 @@ import h5py
 import os
 import torch
 import torchvision
+import logging
 
 from torch.utils.data.dataset import Dataset
 from torchcodec.decoders import VideoDecoder
 from glob import glob
 
 from brainannlib.algonauts_funcs import load_fmri
+
+
+logging.basicConfig()
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 
 class FriendsDataset(Dataset):
@@ -101,10 +107,87 @@ class FriendsDataset(Dataset):
         return video_data, fmri_data
 
 
+class FriendsFeatureDataset(Dataset):
+    def __init__(self, root, features_root, subjects=[1,2,3,5], seasons=[1,2,3,4,5,6]):
+        self.root = root
+        self.features_root = features_root
+        self.seasons = seasons
+        self.subjects = subjects
+
+        # List all .h5 files in the root directory
+        self.fmris = []
+        self.tot_samples = 0
+        self.scan_idx_map = []
+        self.time_idx_map = []
+
+        last_idx = 0
+        for subject in subjects:
+            fmri = load_fmri(root, subject, targets=["friends"])
+
+            for key in fmri.keys():
+                curr_fmri = fmri[key]
+                fmri_samples = curr_fmri.shape[0]
+
+                season = int(key[1:3])
+                if season not in self.seasons:
+                    continue
+
+                self.fmris.append({"movie": key, "fmri": curr_fmri, "n_samples": fmri_samples, "subject": subject})
+
+                # Map all indexes between (tot_samples, tot_samples+fmri_samples) to current fmri index
+                self.scan_idx_map.extend([last_idx] * fmri_samples)
+                self.time_idx_map.extend(list(range(fmri_samples)))
+                self.tot_samples += fmri_samples
+                last_idx += 1
+
+        print("Loaded", len(self.fmris), "fmri files, total samples:", self.tot_samples)
+
+    def load_movie_features(self, movie_name) -> torch.Tensor:
+        movie_folder = os.path.join(self.features_root, "features/friends")
+
+        season = int(movie_name[1:3])
+        episode_path = os.path.join(movie_folder, f"s{season}", f"friends_{movie_name}.pth")
+
+        features = torch.load(episode_path, map_location="cpu")
+        return features
+
+    def __len__(self):
+        return self.tot_samples
+
+    def __getitem__(self, idx):
+        fmri_index = self.scan_idx_map[idx]
+        sample_index = self.time_idx_map[idx]
+
+        fmri = self.fmris[fmri_index]
+
+        if sample_index >= fmri["n_samples"]:
+            fmri_data = fmri["fmri"][-1]
+        else:
+            fmri_data = fmri["fmri"][sample_index]
+
+        features = self.load_movie_features(fmri["movie"])
+
+        # logging.info(f"Loaded features for {fmri['movie']} with shape {features.shape} for subject {fmri['subject']}")
+
+        # assert len(features) == fmri["n_samples"], f"Features length {len(features)} does not match fmri samples {fmri['n_samples']}"
+        if sample_index >= features.shape[0]:
+            features = features[-1]
+        else:
+            features = features[sample_index]
+        return features, fmri_data
 
 
 
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data_dir', type=str, default="/home/barbano/data")
+    parser.add_argument('--features_dir', type=str)
+    args = parser.parse_args()
 
+    dataset = FriendsFeatureDataset(root=args.data_dir, features_root=args.features_dir)
+    sample = dataset[0]
+    print(sample[0].shape, sample[1].shape)
 
 
 
