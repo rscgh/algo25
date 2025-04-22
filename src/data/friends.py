@@ -108,11 +108,13 @@ class FriendsDataset(Dataset):
 
 
 class FriendsFeatureDataset(Dataset):
-    def __init__(self, root, features_root, subjects=[1,2,3,5], seasons=[1,2,3,4,5,6]):
+    def __init__(self, root, features_root, subjects=[1,2,3,5], seasons=[1,2,3,4,5,6],
+                 stimulus_window=3):
         self.root = root
         self.features_root = features_root
         self.seasons = seasons
         self.subjects = subjects
+        self.stimulus_window = stimulus_window
 
         # List all .h5 files in the root directory
         self.fmris = []
@@ -170,11 +172,18 @@ class FriendsFeatureDataset(Dataset):
         # logging.info(f"Loaded features for {fmri['movie']} with shape {features.shape} for subject {fmri['subject']}")
 
         # assert len(features) == fmri["n_samples"], f"Features length {len(features)} does not match fmri samples {fmri['n_samples']}"
-        if sample_index >= features.shape[0]:
-            features = features[-1]
+
+        # get the features for the current sample in the range sample_index-self.stimulus_window:sample_index
+        if sample_index - self.stimulus_window < 0:
+            # pad with the first sample to reach self.stimulus_window
+            pad = torch.zeros(self.stimulus_window - sample_index, features.shape[1], device=features.device)
+            features = torch.cat([pad, features[:sample_index]], dim=0)
+        elif sample_index >= features.shape[0]:
+            features = features[-1 - self.stimulus_window:-1]
         else:
-            features = features[sample_index]
-        return features, fmri_data
+            features = features[sample_index - self.stimulus_window:sample_index]
+
+        return features.flatten(), fmri_data
 
 
 

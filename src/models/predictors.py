@@ -16,10 +16,10 @@ class MLPSmall(nn.Module):
         self.mlp = nn.Sequential(
             nn.Dropout(dropout),
             nn.BatchNorm1d(input_dim),
-            nn.Linear(input_dim, input_dim * 2),
+            nn.Linear(input_dim, input_dim // 2),
             nn.ReLU(),
-            nn.BatchNorm1d(input_dim * 2),
-            nn.Linear(input_dim * 2, output_dim),
+            nn.BatchNorm1d(input_dim // 2),
+            nn.Linear(input_dim // 2, output_dim),
         )
 
     def forward(self, x, y=None):
@@ -33,9 +33,10 @@ class MLPSmall(nn.Module):
         # compute average correlation of minibatch
         x_ = x.detach().cpu().numpy()
         y_ = y.detach().cpu().numpy()
-        r = []
-        for i in range(x_.shape[0]):
-            r.append(pearsonr(x_[i], y_[i])[0])
-        r = torch.tensor(r).mean()
 
-        return loss, r, x
+        # r = []
+        # for i in range(x_.shape[0]):
+        #     r.append(pearsonr(x_[i], y_[i])[0])
+        # r = torch.tensor(r).mean()
+
+        return loss, x

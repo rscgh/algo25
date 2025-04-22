@@ -36,11 +36,13 @@ def parse_args():
     parser.add_argument('--device', help="device to use", type=str, default='cuda')
     parser.add_argument('--trial', help="random seed / trial id", type=int, default=0)
     parser.add_argument('--amp', action='store_true', help="use automatic mixed precision")
-    parser.add_argument('--print_freq', type=int, help='print frequency', default=1)
+    parser.add_argument('--print_freq', type=int, help='print frequency', default=50)
     parser.add_argument('--minibatch_log_freq', type=int, help='minibatch log frequency', default=50)
 
     # model
     parser.add_argument('--model', help="model to use", type=str, default='mlp-small')
+    parser.add_argument('--dropout', type=float, help="dropout", default=0.0)
+    parser.add_argument('--stimulus_window', type=int, help="width of stimulus window (num. of chunks)", default=1)
 
     # optimization
     parser.add_argument('--optimizer', help="optimizer to use", type=str, default='adam')
@@ -86,7 +88,11 @@ def parse_args():
 
 def load_model(opts):
     if opts.model == "mlp-small":
-        return models.predictors.MLPSmall(768, 1000, 0).to(opts.device)
+        return models.predictors.MLPSmall(
+            768 * opts.stimulus_window,
+            1000,
+            opts.dropout
+        ).to(opts.device)
 
     raise ValueError(f"Model not recognized {opts.model}")
 
@@ -101,12 +107,25 @@ def load_optimizer(model, opts):
     raise ValueError("Optimizer not recognized")
 
 
+def torch_pearsonr(output, target):
+    x = output
+    y = target
+
+    vx = x - torch.mean(x, dim=-1, keepdim=True)
+    vy = y - torch.mean(y, dim=-1, keepdim=True)
+
+    return torch.mean(torch.sum(vx * vy, dim=-1) / (torch.sqrt(torch.sum(vx ** 2, dim=-1)) * torch.sqrt(torch.sum(vy ** 2, dim=-1))))
+
+
 def train(model, dataloader, optimizer, opts, epoch, writer):
     loss = util.AverageMeter()
-    corr = util.AverageMeter()
+    # corr = util.AverageMeter()
     batch_time = util.AverageMeter()
     data_time = util.AverageMeter()
     scaler = torch.amp.GradScaler("cuda", enabled=opts.amp)
+
+    all_outputs = []
+    all_labels = []
 
     model.train()
 
@@ -119,7 +138,7 @@ def train(model, dataloader, optimizer, opts, epoch, writer):
         warmup_learning_rate(opts, epoch, idx, len(dataloader), optimizer)
 
         with torch.amp.autocast("cuda", enabled=opts.amp):
-            running_loss, running_r, _ = model(features, fmri)
+            running_loss, outputs = model(features, fmri)
 
         optimizer.zero_grad()
         if opts.amp:
@@ -131,18 +150,19 @@ def train(model, dataloader, optimizer, opts, epoch, writer):
             optimizer.step()
 
         loss.update(running_loss.item(), bsz)
-        corr.update(running_r.item(), bsz)
+        # corr.update(running_r.item(), bsz)
         batch_time.update(time.time() - t1)
         t1 = time.time()
         eta = batch_time.avg * (len(dataloader) - idx)
+        all_outputs.append(outputs.detach())
+        all_labels.append(fmri)
 
         if (idx + 1) % opts.print_freq == 0:
             print(f"Train: [{epoch}][{idx + 1}/{len(dataloader)}]:\t"
                   f"DT {data_time.avg:.3f}\t"
                   f"BT {batch_time.avg:.3f}\t"
                   f"ETA {datetime.timedelta(seconds=eta)}\t"
-                  f"loss {loss.avg:.3f}\t"
-                  f"r {corr.avg:.3f}")
+                  f"loss {loss.avg:.3f}")
 
         # if (idx + 1) % opts.minibatch_log_freq == 0 or idx == 0:
         #     writer.add_scalar("train/MB_loss", loss.avg, idx + epoch * len(dataloader))
@@ -151,7 +171,13 @@ def train(model, dataloader, optimizer, opts, epoch, writer):
         #     writer.add_scalar("MB_DT", data_time.avg, idx + epoch * len(dataloader))
         #     writer.add_scalar("MB_step", idx + epoch * len(dataloader), idx + epoch * len(dataloader))
 
-    return loss.avg, corr.avg, batch_time.avg, data_time.avg
+    all_outputs = torch.cat(all_outputs, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
+
+    r = torch_pearsonr(all_outputs, all_labels).item()
+    print("r:", r)
+
+    return loss.avg, r, batch_time.avg, data_time.avg
 
 
 @torch.inference_mode()
@@ -165,7 +191,7 @@ def test(model, dataloader, optimizer, opts, epoch, writer):
         features, fmri = features.to(opts.device), fmri.to(opts.device)
 
         with torch.amp.autocast("cuda", enabled=opts.amp):
-            _, _, outputs = model(features, fmri)
+            _, outputs = model(features, fmri)
 
         all_outputs.append(outputs.cpu())
         all_labels.append(fmri.cpu())
@@ -176,10 +202,8 @@ def test(model, dataloader, optimizer, opts, epoch, writer):
     mae = F.l1_loss(all_outputs, all_labels)
 
     # compute average correlation
-    r = []
-    for i in range(all_outputs.shape[1]):
-        r.append(pearsonr(all_labels[i], all_outputs[i])[0])
-    r = np.mean(r)
+    r = torch_pearsonr(all_outputs, all_labels).item()
+    print("test r:", r)
 
     return mae, r
 
@@ -195,14 +219,16 @@ def run_training(opts, subject, writer):
 
     # Load dataset
     train_dataset = FriendsFeatureDataset(root=opts.data_dir, features_root=opts.features_dir,
-                                          subjects=[subject], seasons=[1,2,3,4,5])
+                                          subjects=[subject], seasons=[1,2,3,4,5],
+                                          stimulus_window=opts.stimulus_window)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=opts.batch_size,
                                                shuffle=True, num_workers=8, pin_memory=True)
 
     test_dataset = FriendsFeatureDataset(root=opts.data_dir, features_root=opts.features_dir,
-                                          subjects=[subject], seasons=[6])
+                                         subjects=[subject], seasons=[6],
+                                         stimulus_window=opts.stimulus_window)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=opts.batch_size,
-                                               shuffle=False, num_workers=8, pin_memory=True)
+                                              shuffle=False, num_workers=8, pin_memory=True)
 
     save_file = os.path.join(opts.save_dir, f"predictor_sub-{subject}.pth")
     start_epoch = 1
@@ -240,8 +266,8 @@ def main():
     opts = parse_args()
     util.set_seed(opts.trial)
 
-    run_name = (f"predictor_{opts.model}_{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
-                f"wd{opts.weight_decay}_bsz{opts.batch_size}_"
+    run_name = (f"predictor_{opts.model}_w{opts.stimulus_window}_{opts.optimizer}_lr{opts.lr}_"
+                f"decay{opts.lr_decay}_wd{opts.weight_decay}_bsz{opts.batch_size}_dropout{opts.dropout}_"
                 f"epochs{opts.epochs}_s{opts.trial}")
 
     tb_dir = os.path.join(opts.log_dir, "tensorboard", run_name)
