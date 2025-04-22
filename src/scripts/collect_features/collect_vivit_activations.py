@@ -15,6 +15,8 @@ from glob import glob
 from natsort import natsorted
 from tqdm import tqdm
 
+from data.friends import load_video_chunk
+
 # mp.set_start_method("spawn", force=True)
 
 TORCHCODEC_DEVICE = "cpu"
@@ -62,28 +64,7 @@ class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
         movie_idx, chunk_idx = self.chunk_idx_to_movie_idx[idx]
         movie_path = self.movies[movie_idx]
 
-        start_t = chunk_idx * self.tr
-        end_t = (chunk_idx + 1) * self.tr
-
-        decoder = VideoDecoder(movie_path, device=TORCHCODEC_DEVICE)
-        if end_t > decoder.metadata.duration_seconds:
-            end_t = decoder.metadata.duration_seconds
-
-        chunk = decoder.get_frames_played_in_range(start_t, end_t).data
-
-        # if the chunk is shorter than self.target_video_len, pad it
-        if len(chunk) < self.target_video_len:
-            # Pad with last frame
-            chunk = torch.cat([chunk, chunk[-1].unsqueeze(0).expand(self.target_video_len - len(chunk), -1, -1, -1)])
-
-        # if the chunk is longer than self.target_video_len, take last N frames
-        if len(chunk) > self.target_video_len:
-            chunk = chunk[-self.target_video_len:]
-
-        lst = torch.split(chunk, 1, 0)
-        lst = [l[0] for l in lst]
-        video_data = self.transform(lst, return_tensors="pt")
-
+        video_data = load_video_chunk(movie_path, chunk_idx, self.tr, self.target_video_len, self.transform)
         return video_data, movie_idx, chunk_idx
 
 

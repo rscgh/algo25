@@ -7,6 +7,7 @@ import os
 import torch
 import torchvision
 import logging
+import numpy as np
 
 from torch.utils.data.dataset import Dataset
 from torchcodec.decoders import VideoDecoder
@@ -20,15 +21,46 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+
+def load_video_chunk(path, sample_index, tr=1.49, target_video_len=32,
+                     transform=None, device="cpu"):
+    start_t = sample_index * tr
+    end_t = (sample_index + 1) * tr
+
+    decoder = VideoDecoder(path, device=device)
+    if end_t > decoder.metadata.duration_seconds:
+        end_t = decoder.metadata.duration_seconds
+
+    chunk = decoder.get_frames_played_in_range(start_t, end_t).data
+
+    # if the chunk is shorter than self.target_video_len, pad it
+    if len(chunk) < target_video_len:
+        # Pad with last frame
+        chunk = torch.cat([chunk, chunk[-1].unsqueeze(0).expand(target_video_len - len(chunk), -1, -1, -1)])
+
+    # if the chunk is longer than self.target_video_len, take N frames uniformly
+    if len(chunk) > target_video_len:
+        idx = np.linspace(0, len(chunk) - 1, target_video_len).astype(int)
+        chunk = chunk[idx]
+
+    if transform is not None:
+        lst = torch.split(chunk, 1, 0)
+        lst = [l[0] for l in lst]
+        chunk = transform(lst, return_tensors="pt")
+
+    return chunk
+
+
 class FriendsDataset(Dataset):
-    def __init__(self, root, modalities=["fmri", "video"], image_transform=None, subjects=[1,2,3,5], timesample=1,
-                 target_video_len=32, downsampled=False):
+    def __init__(self, root, modalities=["fmri", "video"], image_transform=None, tr=1.49,
+                 subjects=[1,2,3,5], timesample=1, target_video_len=32, downsampled=False):
         self.root = root
         self.modalities = modalities
         self.image_transform = image_transform
         self.timesample = timesample
         self.target_video_len = target_video_len
         self.downsampled = downsampled
+        self.tr = tr
 
         # List all .h5 files in the root directory
         self.fmris = []
@@ -54,7 +86,7 @@ class FriendsDataset(Dataset):
 
         print("Loaded", len(self.fmris), "fmri files, total samples:", self.tot_samples)
 
-    def load_movie(self, movie_name) -> VideoDecoder:
+    def get_movie_path(self, movie_name) -> VideoDecoder:
         movie_folder = os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies/friends")
         if self.downsampled:
             movie_folder = os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies_224/friends")
@@ -75,36 +107,11 @@ class FriendsDataset(Dataset):
         fmri = self.fmris[fmri_index]
         fmri_data = fmri["fmri"][sample_index]
 
-        video = self.load_movie(fmri["movie"])
-        n_frames = len(video)
-        n_samples = fmri["n_samples"]
-
-        window_length = n_frames // n_samples
-        start_frame = sample_index * window_length
-        end_frame = start_frame + window_length
-
-        # Ensure that the end frame does not exceed the number of frames
-        if end_frame > n_frames:
-            end_frame = n_frames
-            # print("Adjusted end frame: ", end_frame)
-
-        video_data = video[start_frame:end_frame:self.timesample]  # TxCxHxW
-
-        # If the video length is less than the target length, pad it
-        if len(video_data) < self.target_video_len:
-            video_data = torch.cat([video_data, video_data[-1].unsqueeze(0).expand(self.target_video_len - len(video_data), -1, -1, -1)])
-
-        # If the video length is greater than the target length, truncate it (from the end)
-        elif len(video_data) > self.target_video_len:
-            video_data = video_data[-self.target_video_len:]
-
-        if self.image_transform is not None:
-            lst = torch.split(video_data, 1, 0)
-            lst = [l[0] for l in lst]
-            video_data = self.image_transform(lst, return_tensors="pt")
-
-
-        return video_data, fmri_data
+        movie_path = self.get_movie_path(fmri["movie"])
+        movie_chunk = load_video_chunk(movie_path, sample_index, tr=self.tr,
+                                       target_video_len=self.target_video_len,
+                                       transform=self.image_transform)
+        return movie_chunk, fmri_data
 
 
 class FriendsFeatureDataset(Dataset):
