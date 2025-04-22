@@ -102,9 +102,7 @@ class FriendsDataset(Dataset):
 
         season = int(movie_name[1:3])
         episode_path = os.path.join(movie_folder, f"s{season}", f"friends_{movie_name}.mkv")
-
-        decoder = VideoDecoder(episode_path, device="cpu")
-        return decoder
+        return episode_path
 
     def __len__(self):
         return self.tot_samples

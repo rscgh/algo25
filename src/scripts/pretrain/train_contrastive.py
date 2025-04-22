@@ -162,7 +162,7 @@ def main():
     util.set_seed(opts.trial)
 
     run_name = (f"{opts.model}_{'downsampled_' if opts.downsampled else ''}"
-                f"sub{''.join(opts.subjects)}_"
+                f"sub{''.join(str(s) for s in opts.subjects)}_"
                 f"w{opts.stimulus_window}_hrf{opts.hrf_delay}_"
                 f"{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
                 f"wd{opts.weight_decay}_bsz{opts.batch_size}_ts{opts.timesample}_"
