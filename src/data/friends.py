@@ -23,9 +23,14 @@ logger.setLevel(logging.INFO)
 
 
 def load_video_chunk(path, sample_index, tr=1.49, target_video_len=32,
-                     transform=None, device="cpu"):
-    start_t = sample_index * tr
-    end_t = (sample_index + 1) * tr
+                     transform=None, stimulus_window=1, hrf_delay=0, device="cpu"):
+
+    # compute the starting index of the current stimulus,
+    # automatically adjusts for out of bounds windows
+    # as long as target_video_len < tr*fps (~44)
+    start_index = max(0, sample_index - stimulus_window - hrf_delay + 1)
+    start_t = start_index * tr
+    end_t = (start_index + 1) * tr
 
     decoder = VideoDecoder(path, device=device)
     if end_t > decoder.metadata.duration_seconds:
@@ -53,7 +58,8 @@ def load_video_chunk(path, sample_index, tr=1.49, target_video_len=32,
 
 class FriendsDataset(Dataset):
     def __init__(self, root, modalities=["fmri", "video"], image_transform=None, tr=1.49,
-                 subjects=[1,2,3,5], timesample=1, target_video_len=32, downsampled=False):
+                 subjects=[1,2,3,5], timesample=1, target_video_len=32, stimulus_window=1, hrf_delay=0,
+                 downsampled=False):
         self.root = root
         self.modalities = modalities
         self.image_transform = image_transform
@@ -61,6 +67,9 @@ class FriendsDataset(Dataset):
         self.target_video_len = target_video_len
         self.downsampled = downsampled
         self.tr = tr
+        self.stimulus_window = stimulus_window
+        self.hrf_delay = hrf_delay
+        self.subjects = subjects
 
         # List all .h5 files in the root directory
         self.fmris = []
@@ -110,7 +119,9 @@ class FriendsDataset(Dataset):
         movie_path = self.get_movie_path(fmri["movie"])
         movie_chunk = load_video_chunk(movie_path, sample_index, tr=self.tr,
                                        target_video_len=self.target_video_len,
-                                       transform=self.image_transform)
+                                       transform=self.image_transform,
+                                       stimulus_window=self.stimulus_window,
+                                       hrf_delay=self.hrf_delay)
         return movie_chunk, fmri_data
 
 

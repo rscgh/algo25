@@ -41,6 +41,9 @@ def parse_args():
     parser.add_argument('--model', help="model to use", type=str, default='vivit-mlp')
     parser.add_argument('--embed_dim', help="embedding dimension", type=int, default=128)
     parser.add_argument('--temperature', help="temperature for clip loss", type=float, default=1.0)
+    parser.add_argument('--stimulus_window', help="stimulus window", type=int, default=1)
+    parser.add_argument('--hrf_delay', help="hrf delay", type=int, default=0)
+    parser.add_argument('--subjects', help="subjects to use", type=int, nargs='+', default=[1,2,3,5])
 
     # optimization
     parser.add_argument('--optimizer', help="optimizer to use", type=str, default='adamw')
@@ -103,11 +106,10 @@ def load_optimizer(model, opts):
     raise ValueError("Optimizer not recognized")
 
 
-def train(model, dataloader, optimizer, opts, epoch, writer):
+def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
     loss = util.AverageMeter()
     batch_time = util.AverageMeter()
     data_time = util.AverageMeter()
-    scaler = torch.amp.GradScaler("cuda", enabled=opts.amp)
 
     model.train()
 
@@ -159,7 +161,10 @@ def main():
     opts = parse_args()
     util.set_seed(opts.trial)
 
-    run_name = (f"{opts.model}_{'downsampled_' if opts.downsampled else ''}{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
+    run_name = (f"{opts.model}_{'downsampled_' if opts.downsampled else ''}"
+                f"sub{''.join(opts.subjects)}_"
+                f"w{opts.stimulus_window}_hrf{opts.hrf_delay}_"
+                f"{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
                 f"wd{opts.weight_decay}_bsz{opts.batch_size}_ts{opts.timesample}_"
                 f"epochs{opts.epochs}_s{opts.trial}")
 
@@ -186,6 +191,8 @@ def main():
 
     preprocess, model = load_model(opts)
     optimizer = load_optimizer(model, opts)
+    scaler = torch.amp.GradScaler("cuda", enabled=opts.amp)
+
 
     trainable_parameters = filter(lambda p: p.requires_grad, model.parameters())
     tot_trainable = sum([np.prod(p.size()) for p in trainable_parameters])
@@ -194,7 +201,8 @@ def main():
 
     # Load dataset
     dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
-                             downsampled=opts.downsampled)
+                             downsampled=opts.downsampled, stimulus_window=opts.stimulus_window,
+                             hrf_delay=opts.hrf_delay, subjects=opts.subjects)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, num_workers=8,
                                              pin_memory=True, prefetch_factor=2)
 
@@ -211,6 +219,7 @@ def main():
 
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        scaler.load_state_dict(checkpoint['scaler'])
         start_epoch = checkpoint['epoch'] + 1
         print(f"Restored model from epoch {start_epoch}")
 
@@ -228,7 +237,7 @@ def main():
         adjust_learning_rate(opts, optimizer, epoch)
 
         t1 = time.time()
-        loss, batch_time, data_time = train(model, dataloader, optimizer, opts, epoch, writer)
+        loss, batch_time, data_time = train(model, dataloader, optimizer, opts, epoch, writer, scaler)
         t2 = time.time()
 
         writer.add_scalar("train/loss", loss, epoch)
@@ -238,7 +247,7 @@ def main():
         writer.add_scalar("epoch", epoch, epoch)
         print(f"epoch {epoch}, total time {t2 - start_time:.2f}, epoch time {t2 - t1:.3f} loss {loss:.4f}")
 
-        save_model(model, optimizer, opts, epoch, save_file)
+        save_model(model, optimizer, scaler, opts, epoch, save_file)
 
 if __name__ == '__main__':
     main()

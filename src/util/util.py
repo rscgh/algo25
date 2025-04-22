@@ -194,7 +194,7 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def save_model(model, optimizer, opts, epoch, save_file):
+def save_model(model, optimizer, scaler, opts, epoch, save_file):
     print('==> Saving...')
     state_dict = model.state_dict()
     if torch.cuda.device_count() > 1:
@@ -204,6 +204,7 @@ def save_model(model, optimizer, opts, epoch, save_file):
         'opts': opts,
         'model': state_dict,
         'optimizer': optimizer.state_dict() if optimizer else None,
+        'scaler': scaler.state_dict() if scaler else None,
         'epoch': epoch,
         'run_id': wandb.run.id
     }

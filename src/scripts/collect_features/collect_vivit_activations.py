@@ -27,12 +27,15 @@ logger.setLevel(logging.INFO)
 
 
 class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
-    def __init__(self, root, transform, tr=1.49, timesample=1, target_video_len=32, downsampled=True):
+    def __init__(self, root, transform, tr=1.49, timesample=1, target_video_len=32, downsampled=True,
+                 stimulus_window=1, hrf_delay=0):
         self.root = root
         self.transform = transform
         self.timesample = timesample
         self.target_video_len = target_video_len
         self.tr = tr
+        self.stimulus_window = stimulus_window
+        self.hrf_delay = hrf_delay
 
         data_dir = os.path.join(self.root, "algonauts_2025.competitors/stimuli/movies/friends/**/*.mkv")
         if downsampled:
@@ -64,7 +67,8 @@ class FriendsStimuliVideoDataset(torch.utils.data.Dataset):
         movie_idx, chunk_idx = self.chunk_idx_to_movie_idx[idx]
         movie_path = self.movies[movie_idx]
 
-        video_data = load_video_chunk(movie_path, chunk_idx, self.tr, self.target_video_len, self.transform)
+        video_data = load_video_chunk(movie_path, chunk_idx, self.tr, self.target_video_len, self.transform,
+                                      stimulus_window=self.stimulus_window, hrf_delay=self.hrf_delay)
         return video_data, movie_idx, chunk_idx
 
 
@@ -79,6 +83,8 @@ def main():
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--downsampled', action='store_true', help="Use downsampled videos (224x224)")
     parser.add_argument('--amp', action='store_true', help="Use automatic mixed precision")
+    parser.add_argument('--stimulus_window', type=int, default=1)
+    parser.add_argument('--hrf_delay', type=int, default=0)
     args = parser.parse_args()
 
     # Load the model
@@ -97,16 +103,19 @@ def main():
         print("Model initialized")
 
     dataset = FriendsStimuliVideoDataset(args.data_dir, transform=image_processor,
-                                         downsampled=args.downsampled)
+                                         downsampled=args.downsampled,
+                                         stimulus_window=args.stimulus_window,
+                                         hrf_delay=args.hrf_delay)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size,
                                              shuffle=False, num_workers=args.num_workers,
                                              pin_memory=True)
     print("Dataset loaded. Tot chunks:", len(dataset))
 
+    output_dir = f"features_w{args.stimulus_window}_hrf{args.hrf_delay}/friends/"
     if args.weights:
-        output_dir = os.path.join(os.path.dirname(args.weights), "features/friends/")
+        output_dir = os.path.join(os.path.dirname(args.weights), output_dir)
     else:
-        output_dir = os.path.join(args.output_dir, "features/friends/")
+        output_dir = os.path.join(args.output_dir, output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
     curr_movie_idx = 0
