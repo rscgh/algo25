@@ -59,7 +59,7 @@ def load_video_chunk(path, sample_index, tr=1.49, target_video_len=32,
 class FriendsDataset(Dataset):
     def __init__(self, root, modalities=["fmri", "video"], image_transform=None, tr=1.49,
                  subjects=[1,2,3,5], timesample=1, target_video_len=32, stimulus_window=1, hrf_delay=0,
-                 downsampled=False):
+                 downsampled=False, fmri_window=1):
         self.root = root
         self.modalities = modalities
         self.image_transform = image_transform
@@ -70,6 +70,11 @@ class FriendsDataset(Dataset):
         self.stimulus_window = stimulus_window
         self.hrf_delay = hrf_delay
         self.subjects = subjects
+
+        if fmri_window % 2 == 0:
+            raise ValueError("fmri_window must be odd, got {}".format(fmri_window))
+        self.fmri_window = fmri_window // 2
+
 
         # List all .h5 files in the root directory
         self.fmris = []
@@ -112,7 +117,26 @@ class FriendsDataset(Dataset):
         sample_index = self.time_idx_map[idx]
 
         fmri = self.fmris[fmri_index]
-        fmri_data = fmri["fmri"][sample_index]
+        fmri_data = None
+
+        if sample_index - self.fmri_window - 1 >= 0 and sample_index + self.fmri_window < fmri["n_samples"]:
+            fmri_data = torch.tensor(fmri["fmri"][sample_index - self.fmri_window - 1:sample_index + self.fmri_window])
+
+        elif sample_index - self.fmri_window - 1 < 0:
+            fmri_data = torch.tensor(fmri["fmri"][:sample_index + self.fmri_window])
+            # print("Padding with first frame:", fmri_data.shape, fmri_data[0].shape, sample_index, self.fmri_window)
+            # pad with the first frame at the beginning to reach self.fmri_window
+            pad = fmri_data[0].unsqueeze(0).repeat(self.fmri_window + 1 - sample_index, 1)
+            fmri_data = torch.cat([pad, fmri_data], dim=0)
+
+        elif sample_index + self.fmri_window >= fmri["n_samples"]:
+            fmri_data = torch.tensor(fmri["fmri"][sample_index - self.fmri_window - 1:])
+            # print("Padding with last frame:", fmri_data.shape, fmri_data[0].shape, sample_index, self.fmri_window)
+            # pad with the last frame at the end to reach self.fmri_window
+            pad = fmri_data[-1].unsqueeze(0).repeat(sample_index + self.fmri_window - fmri["n_samples"], 1)
+            fmri_data = torch.cat([fmri_data, pad], dim=0)
+
+        assert fmri_data is not None, f"fmri_data is None for sample {sample_index} in movie {fmri['movie']}"
 
         movie_path = self.get_movie_path(fmri["movie"])
         movie_chunk = load_video_chunk(movie_path, sample_index, tr=self.tr,

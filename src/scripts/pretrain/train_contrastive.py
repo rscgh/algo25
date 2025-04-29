@@ -43,6 +43,7 @@ def parse_args():
     parser.add_argument('--temperature', help="temperature for clip loss", type=float, default=1.0)
     parser.add_argument('--stimulus_window', help="stimulus window", type=int, default=1)
     parser.add_argument('--hrf_delay', help="hrf delay", type=int, default=0)
+    parser.add_argument('--fmri_window', help="fmri window", type=int, default=1)
     parser.add_argument('--subjects', help="subjects to use", type=int, nargs='+', default=[1,2,3,5])
 
     # optimization
@@ -90,10 +91,17 @@ def parse_args():
 
 def load_model(opts):
     if opts.model == "vivit-mlp":
-        model = models.vivit.VivitMLPContrastive(embed_dim=opts.embed_dim, temperature=opts.temperature).to(opts.device)
+        model = models.vivit.VivitMLPContrastive(embed_dim=opts.embed_dim, temperature=opts.temperature,
+                                                 fmri_window=opts.fmri_window).to(opts.device)
+        return model.image_processor(), model
+
+    elif opts.model == "vivit-conv1d":
+        model = models.vivit.VivitConvContrastive(embed_dim=opts.embed_dim, temperature=opts.temperature,
+                                                  fmri_window=opts.fmri_window).to(opts.device)
         return model.image_processor(), model
 
     raise ValueError(f"Model not recognized {opts.model}")
+
 
 def load_optimizer(model, opts):
     if opts.optimizer == "adam":
@@ -163,7 +171,7 @@ def main():
 
     run_name = (f"{opts.model}_{'downsampled_' if opts.downsampled else ''}"
                 f"sub{''.join(str(s) for s in opts.subjects)}_"
-                f"w{opts.stimulus_window}_hrf{opts.hrf_delay}_"
+                f"w{opts.stimulus_window}_hrf{opts.hrf_delay}_fmriW{opts.fmri_window}_"
                 f"{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
                 f"wd{opts.weight_decay}_bsz{opts.batch_size}_ts{opts.timesample}_"
                 f"epochs{opts.epochs}_s{opts.trial}")
@@ -202,7 +210,8 @@ def main():
     # Load dataset
     dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
                              downsampled=opts.downsampled, stimulus_window=opts.stimulus_window,
-                             hrf_delay=opts.hrf_delay, subjects=opts.subjects)
+                             hrf_delay=opts.hrf_delay, subjects=opts.subjects,
+                             fmri_window=opts.fmri_window)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, num_workers=8,
                                              pin_memory=True, prefetch_factor=2)
 
@@ -225,6 +234,8 @@ def main():
 
         # Copy old file to weights.pth.{epoch}
         shutil.copyfile(save_file, f"{save_file}.{checkpoint['epoch']}")
+        del checkpoint
+        torch.cuda.empty_cache()
 
     print('Config:', opts)
     print('Model:', opts.model, model.__class__.__name__)
@@ -248,6 +259,7 @@ def main():
         print(f"epoch {epoch}, total time {t2 - start_time:.2f}, epoch time {t2 - t1:.3f} loss {loss:.4f}")
 
         save_model(model, optimizer, scaler, opts, epoch, save_file)
+        torch.cuda.empty_cache()
 
 if __name__ == '__main__':
     main()
