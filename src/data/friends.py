@@ -161,7 +161,7 @@ class FriendsFeatureDataset(Dataset):
         print("Loaded", len(self.fmris), "fmri files, total samples:", self.tot_samples)
 
     def load_movie_features(self, movie_name) -> torch.Tensor:
-        movie_folder = os.path.join(self.features_root, "features/friends")
+        movie_folder = os.path.join(self.features_root, "friends")
 
         season = int(movie_name[1:3])
         episode_path = os.path.join(movie_folder, f"s{season}", f"friends_{movie_name}.pth")
