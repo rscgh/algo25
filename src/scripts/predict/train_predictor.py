@@ -260,7 +260,7 @@ def run_training(opts, subject, writer):
         print(f"epoch {epoch}, total time {t2 - start_time:.2f}, epoch time {t2 - t1:.3f} "
               f"loss {loss:.4f} train r {corr:.4f} - test MAE {test_mae:.4f} test r {test_r:.4f}")
 
-        save_model(model, None, opts, epoch, save_file)
+        save_model(model, None, None, opts, epoch, save_file)
 
 def main():
     opts = parse_args()
