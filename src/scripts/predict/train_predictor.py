@@ -6,7 +6,6 @@ import argparse
 import os
 import math
 import time
-import shutil
 import datetime
 
 import torch
@@ -16,13 +15,11 @@ import torch.utils.tensorboard
 import wandb
 import numpy as np
 
-from scipy.stats import pearsonr
-
 import util
 import models
 
 from data.friends import FriendsFeatureDataset
-from util import warmup_learning_rate, adjust_learning_rate, save_model
+from util import warmup_learning_rate, adjust_learning_rate, save_model, torch_pearsonr
 
 
 def parse_args():
@@ -105,16 +102,6 @@ def load_optimizer(model, opts):
         return torch.optim.SGD(model.parameters(), lr=opts.lr, weight_decay=opts.weight_decay, momentum=opts.momentum)
 
     raise ValueError("Optimizer not recognized")
-
-
-def torch_pearsonr(output, target):
-    x = output
-    y = target
-
-    vx = x - torch.mean(x, dim=-1, keepdim=True)
-    vy = y - torch.mean(y, dim=-1, keepdim=True)
-
-    return torch.mean(torch.sum(vx * vy, dim=-1) / (torch.sqrt(torch.sum(vx ** 2, dim=-1)) * torch.sqrt(torch.sum(vy ** 2, dim=-1))))
 
 
 def train(model, dataloader, optimizer, opts, epoch, writer):

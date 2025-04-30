@@ -57,11 +57,12 @@ def load_video_chunk(path, sample_index, tr=1.49, target_video_len=32,
 
 
 class FriendsDataset(Dataset):
-    def __init__(self, root, modalities=["fmri", "video"], image_transform=None, tr=1.49,
+    def __init__(self, root, modalities=["fmri", "video"], image_transform=None, tr=1.49, seasons=[1,2,3,4,5,6],
                  subjects=[1,2,3,5], timesample=1, target_video_len=32, stimulus_window=1, hrf_delay=0,
                  downsampled=False, fmri_window=1):
         self.root = root
         self.modalities = modalities
+        self.seasons = seasons
         self.image_transform = image_transform
         self.timesample = timesample
         self.target_video_len = target_video_len
@@ -89,6 +90,10 @@ class FriendsDataset(Dataset):
             for key in fmri.keys():
                 curr_fmri = fmri[key]
                 fmri_samples = curr_fmri.shape[0]
+
+                season = int(key[1:3])
+                if season not in self.seasons:
+                    continue
 
                 self.fmris.append({"movie": key, "fmri": curr_fmri, "n_samples": fmri_samples})
 
@@ -119,7 +124,10 @@ class FriendsDataset(Dataset):
         fmri = self.fmris[fmri_index]
         fmri_data = None
 
-        if sample_index - self.fmri_window - 1 >= 0 and sample_index + self.fmri_window < fmri["n_samples"]:
+        if self.fmri_window == 0:
+            fmri_data = torch.tensor(fmri["fmri"][sample_index])
+
+        elif sample_index - self.fmri_window - 1 >= 0 and sample_index + self.fmri_window < fmri["n_samples"]:
             fmri_data = torch.tensor(fmri["fmri"][sample_index - self.fmri_window - 1:sample_index + self.fmri_window])
 
         elif sample_index - self.fmri_window - 1 < 0:

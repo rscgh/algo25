@@ -45,8 +45,12 @@ def parse_args():
     parser.add_argument('--hrf_delay', help="hrf delay", type=int, default=0)
     parser.add_argument('--fmri_window', help="fmri window", type=int, default=1)
     parser.add_argument('--subjects', help="subjects to use", type=int, nargs='+', default=[1,2,3,5])
+    parser.add_argument('--train_seasons', help="seasons to use for training", type=int, nargs='+',
+                        default=[1, 2, 3, 4, 5])
+    parser.add_argument('--test_seasons', help="seasons to use for testing", type=int, nargs='+', default=[6])
 
     # optimization
+    parser.add_argument('--method', type=str, choices=["mae", "mse", "clip"], default="clip", help="method to use")
     parser.add_argument('--optimizer', help="optimizer to use", type=str, default='adamw')
     parser.add_argument('--lr', help="learning rate", type=float, default=1e-3)
     parser.add_argument('--lr_decay', type=str, help='type of decay', choices=['cosine', 'step'], default='step')
@@ -86,6 +90,12 @@ def parse_args():
             opts.milestones = [int(s) for s in opts.lr_decay_epochs.split(',')]
             opts.warmup_to = opts.lr
 
+    if opts.method == "clip" and opts.model not in ["vivit-mlp", "vivit-conv1d"]:
+        raise ValueError("Model not compatible with CLIP loss")
+
+    if opts.model in ["vivit-mlp", "vivit-conv1d"] and opts.method != "clip":
+        raise ValueError("Model not compatible with MAE loss")
+
     return opts
 
 
@@ -98,6 +108,10 @@ def load_model(opts):
     elif opts.model == "vivit-conv1d":
         model = models.vivit.VivitConvContrastive(embed_dim=opts.embed_dim, temperature=opts.temperature,
                                                   fmri_window=opts.fmri_window).to(opts.device)
+        return model.image_processor(), model
+
+    elif opts.model == "vivit":
+        model = models.vivit.VivitRegression(criterion=opts.method).to(opts.device)
         return model.image_processor(), model
 
     raise ValueError(f"Model not recognized {opts.model}")
@@ -132,7 +146,7 @@ def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
         warmup_learning_rate(opts, epoch, idx, len(dataloader), optimizer)
 
         with torch.amp.autocast("cuda", enabled=opts.amp):
-            running_loss = model(video, fmri)
+            running_loss = model(video, fmri)[0]
 
         optimizer.zero_grad()
         if opts.amp:
@@ -165,11 +179,59 @@ def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
     return loss.avg, batch_time.avg, data_time.avg
 
 
+@torch.inference_mode()
+def test(model, dataloader, opts, epoch, writer, scaler):
+    loss = util.AverageMeter()
+    batch_time = util.AverageMeter()
+    data_time = util.AverageMeter()
+
+    all_outputs = []
+    all_labels = []
+
+    model.eval()
+
+    t1 = time.time()
+    for idx, (video, fmri) in enumerate(dataloader):
+        video, fmri = video.to(opts.device), fmri.to(opts.device)
+        data_time.update(time.time() - t1)
+
+        video['pixel_values'] = video['pixel_values'].squeeze(1)
+        bsz = video['pixel_values'].shape[0]
+
+        with torch.amp.autocast("cuda", enabled=opts.amp):
+            running_loss, outputs = model(video, fmri)
+
+        all_outputs.append(outputs.detach())
+        all_labels.append(fmri)
+
+        loss.update(running_loss.item(), bsz)
+        batch_time.update(time.time() - t1)
+        t1 = time.time()
+        eta = batch_time.avg * (len(dataloader) - idx)
+
+        if (idx + 1) % opts.print_freq == 0:
+            print(f"Test: [{epoch}][{idx + 1}/{len(dataloader)}]:\t"
+                  f"DT {data_time.avg:.3f}\t"
+                  f"BT {batch_time.avg:.3f}\t"
+                  f"ETA {datetime.timedelta(seconds=eta)}\t"
+                  f"loss {loss.avg:.3f}\t")
+
+        if (idx + 1) % opts.minibatch_log_freq == 0 or idx == 0:
+            writer.add_scalar("test/MB_loss", loss.avg, idx + epoch * len(dataloader))
+
+    all_outputs = torch.cat(all_outputs, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
+    r = util.torch_pearsonr(all_outputs, all_labels)
+    print("r:", r)
+
+    return r, loss.avg, batch_time.avg, data_time.avg
+
+
 def main():
     opts = parse_args()
     util.set_seed(opts.trial)
 
-    run_name = (f"{opts.model}_{'downsampled_' if opts.downsampled else ''}"
+    run_name = (f"{opts.model}_{opts.method}_{'downsampled_' if opts.downsampled else ''}"
                 f"sub{''.join(str(s) for s in opts.subjects)}_"
                 f"w{opts.stimulus_window}_hrf{opts.hrf_delay}_fmriW{opts.fmri_window}_"
                 f"{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
@@ -210,10 +272,18 @@ def main():
     # Load dataset
     dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
                              downsampled=opts.downsampled, stimulus_window=opts.stimulus_window,
-                             hrf_delay=opts.hrf_delay, subjects=opts.subjects,
+                             hrf_delay=opts.hrf_delay, subjects=opts.subjects, seasons=opts.train_seasons,
                              fmri_window=opts.fmri_window)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, num_workers=8,
                                              pin_memory=True, prefetch_factor=2)
+
+
+    test_dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
+                                  downsampled=opts.downsampled, stimulus_window=opts.stimulus_window,
+                                  hrf_delay=opts.hrf_delay, subjects=opts.subjects, seasons=opts.test_seasons,
+                                  fmri_window=opts.fmri_window)
+    test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opts.batch_size, shuffle=False,
+                                                  num_workers=8, pin_memory=True, prefetch_factor=2)
 
     save_file = os.path.join(save_dir, "weights.pth")
     start_epoch = 1
@@ -257,6 +327,11 @@ def main():
         writer.add_scalar("DT", data_time, epoch)
         writer.add_scalar("epoch", epoch, epoch)
         print(f"epoch {epoch}, total time {t2 - start_time:.2f}, epoch time {t2 - t1:.3f} loss {loss:.4f}")
+
+        if opts.method != "clip":
+            r, test_loss, _, _ = test(model, test_dataloader, opts, epoch, writer, scaler)
+            writer.add_scalar("test/loss", test_loss, epoch)
+            writer.add_scalar("test/r", r, epoch)
 
         save_model(model, optimizer, scaler, opts, epoch, save_file)
         torch.cuda.empty_cache()

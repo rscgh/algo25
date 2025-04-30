@@ -91,7 +91,8 @@ def main():
     if args.weights:
         checkpoint = torch.load(args.weights, map_location=args.device, weights_only=False)
         model = models.vivit.VivitMLPContrastive(embed_dim=checkpoint['opts'].embed_dim,
-                                                 temperature=checkpoint['opts'].temperature)
+                                                 temperature=checkpoint['opts'].temperature,
+                                                 fmri_window=checkpoint['opts'].fmri_window,)
         model.load_state_dict(checkpoint['model'])
         model = model.to(args.device)
         image_processor = model.image_processor()

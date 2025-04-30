@@ -10,6 +10,41 @@ import torchvision
 from transformers import VivitModel, VivitImageProcessor
 
 
+class VivitRegression(nn.Module):
+    def __init__(self, vivit_pretrained="google/vivit-b-16x2-kinetics400", n_parcels=1000,
+                 torch_dtype=torch.float32, criterion="mae"):
+        super().__init__()
+
+        self.vivit_processor = VivitImageProcessor.from_pretrained(vivit_pretrained)
+        self.video_encoder = VivitModel.from_pretrained(
+            vivit_pretrained,
+            attn_implementation="sdpa",
+            torch_dtype=torch_dtype
+        )
+        self.video_projection = nn.Linear(768, n_parcels, bias=False)
+        self.criterion = criterion
+
+    def image_processor(self):
+        return self.vivit_processor
+
+    def encode_video(self, video):
+        return self.video_encoder(**video)[0][:, 0, :]
+
+    def forward(self, video, fmri):
+        video_features = self.encode_video(video)
+        logits = self.video_projection(video_features)
+
+        if len(fmri.shape) > 2:  # fmris are stacked as [bsz, 1, 1000] by dataloaders
+            fmri = fmri.view(fmri.shape[0], -1)
+
+        if self.criterion == "mae":
+            loss = F.l1_loss(logits, fmri)
+        elif self.criterion == "mse":
+            loss = F.mse_loss(logits, fmri)
+
+        return loss, logits
+
+
 class VivitMLPContrastive(nn.Module):
     def __init__(self, vivit_pretrained="google/vivit-b-16x2-kinetics400", embed_dim=128,
                  temperature=1.0, fmri_window=1, torch_dtype=torch.float32):

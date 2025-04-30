@@ -337,3 +337,13 @@ def compute_site_ba(model, train_loader, test_int, test_ext, opts):
     ba_ext = site_estimator.score(ext_X, ext_y)
 
     return site_estimator, ba_train, ba_int, ba_ext
+
+
+def torch_pearsonr(output, target):
+    x = output
+    y = target
+
+    vx = x - torch.mean(x, dim=-1, keepdim=True)
+    vy = y - torch.mean(y, dim=-1, keepdim=True)
+
+    return torch.mean(torch.sum(vx * vy, dim=-1) / (torch.sqrt(torch.sum(vx ** 2, dim=-1)) * torch.sqrt(torch.sum(vy ** 2, dim=-1))))
