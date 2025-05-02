@@ -132,6 +132,7 @@ def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
     loss = util.AverageMeter()
     batch_time = util.AverageMeter()
     data_time = util.AverageMeter()
+    acc = util.AverageMeter()
 
     model.train()
 
@@ -146,7 +147,8 @@ def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
         warmup_learning_rate(opts, epoch, idx, len(dataloader), optimizer)
 
         with torch.amp.autocast("cuda", enabled=opts.amp):
-            running_loss = model(video, fmri)[0]
+            outputs = model(video, fmri)
+            running_loss = outputs[0]
 
         optimizer.zero_grad()
         if opts.amp:
@@ -162,15 +164,21 @@ def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
         t1 = time.time()
         eta = batch_time.avg * (len(dataloader) - idx)
 
+        if opts.method != "clip":
+            r = util.torch_pearsonr(outputs[1], fmri)
+            acc.update(r.item(), bsz)
+
         if (idx + 1) % opts.print_freq == 0:
             print(f"Train: [{epoch}][{idx + 1}/{len(dataloader)}]:\t"
                   f"DT {data_time.avg:.3f}\t"
                   f"BT {batch_time.avg:.3f}\t"
                   f"ETA {datetime.timedelta(seconds=eta)}\t"
-                  f"loss {loss.avg:.3f}\t")
+                  f"loss {loss.avg:.3f}\t"
+                  f"r {acc.avg:.3f}\t")
 
         if (idx + 1) % opts.minibatch_log_freq == 0 or idx == 0:
             writer.add_scalar("train/MB_loss", loss.avg, idx + epoch * len(dataloader))
+            writer.add_scalar("train/MB_r", acc.avg, idx + epoch * len(dataloader))
             writer.add_scalar("MB_lr", optimizer.param_groups[0]['lr'], idx + epoch * len(dataloader))
             writer.add_scalar("MB_BT", batch_time.avg, idx + epoch * len(dataloader))
             writer.add_scalar("MB_DT", data_time.avg, idx + epoch * len(dataloader))

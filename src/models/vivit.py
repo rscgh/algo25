@@ -21,7 +21,7 @@ class VivitRegression(nn.Module):
             attn_implementation="sdpa",
             torch_dtype=torch_dtype
         )
-        self.video_projection = nn.Linear(768, n_parcels, bias=False)
+        self.video_projection = nn.Linear(768, n_parcels, bias=True)
         self.criterion = criterion
 
     def image_processor(self):
@@ -99,7 +99,8 @@ class VivitMLPContrastive(nn.Module):
             F.cross_entropy(logits_video, labels) +
             F.cross_entropy(logits_fmri, labels)
         ) / 2
-        return loss
+
+        return loss, video_features, fmri_features
 
 
 class VivitConvContrastive(VivitMLPContrastive):
