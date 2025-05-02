@@ -39,6 +39,7 @@ def parse_args():
 
     # model
     parser.add_argument('--model', help="model to use", type=str, default='vivit-mlp')
+    parser.add_argument('--n_frames', type=int, default=32, help="number of frames to use")
     parser.add_argument('--embed_dim', help="embedding dimension", type=int, default=128)
     parser.add_argument('--temperature', help="temperature for clip loss", type=float, default=1.0)
     parser.add_argument('--stimulus_window', help="stimulus window", type=int, default=1)
@@ -112,6 +113,10 @@ def load_model(opts):
 
     elif opts.model == "vivit":
         model = models.vivit.VivitRegression(criterion=opts.method).to(opts.device)
+        return model.image_processor(), model
+
+    elif opts.model == "videomae":
+        model = models.videomae.VideoMAERegression(criterion=opts.method).to(opts.device)
         return model.image_processor(), model
 
     raise ValueError(f"Model not recognized {opts.model}")
@@ -239,7 +244,7 @@ def main():
     opts = parse_args()
     util.set_seed(opts.trial)
 
-    run_name = (f"{opts.model}_{opts.method}_{'downsampled_' if opts.downsampled else ''}"
+    run_name = (f"{opts.model}_{opts.method}_{'downsampled_' if opts.downsampled else ''}_nframes{opts.n_frames}_"
                 f"sub{''.join(str(s) for s in opts.subjects)}_"
                 f"w{opts.stimulus_window}_hrf{opts.hrf_delay}_fmriW{opts.fmri_window}_"
                 f"{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
@@ -281,7 +286,7 @@ def main():
     dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
                              downsampled=opts.downsampled, stimulus_window=opts.stimulus_window,
                              hrf_delay=opts.hrf_delay, subjects=opts.subjects, seasons=opts.train_seasons,
-                             fmri_window=opts.fmri_window)
+                             fmri_window=opts.fmri_window, target_video_len=opts.n_frames)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, num_workers=8,
                                              pin_memory=True, prefetch_factor=2)
 
@@ -289,7 +294,7 @@ def main():
     test_dataset = FriendsDataset(root=opts.data_dir, timesample=opts.timesample, image_transform=preprocess,
                                   downsampled=opts.downsampled, stimulus_window=opts.stimulus_window,
                                   hrf_delay=opts.hrf_delay, subjects=opts.subjects, seasons=opts.test_seasons,
-                                  fmri_window=opts.fmri_window)
+                                  fmri_window=opts.fmri_window, target_video_len=opts.n_frames)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opts.batch_size, shuffle=False,
                                                   num_workers=8, pin_memory=True, prefetch_factor=2)
 
