@@ -95,7 +95,7 @@ class FriendsDataset(Dataset):
                 if season not in self.seasons:
                     continue
 
-                self.fmris.append({"movie": key, "fmri": curr_fmri, "n_samples": fmri_samples})
+                self.fmris.append({"movie": key, "fmri": curr_fmri, "n_samples": fmri_samples, "subject": subject})
 
                 # Map all indexes between (tot_samples, tot_samples+fmri_samples) to current fmri index
                 self.scan_idx_map.extend([last_idx] * fmri_samples)
@@ -152,7 +152,7 @@ class FriendsDataset(Dataset):
                                        transform=self.image_transform,
                                        stimulus_window=self.stimulus_window,
                                        hrf_delay=self.hrf_delay)
-        return movie_chunk, fmri_data
+        return movie_chunk, fmri_data, float(fmri["subject"])
 
 
 class FriendsFeatureDataset(Dataset):

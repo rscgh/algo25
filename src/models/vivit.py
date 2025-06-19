@@ -12,7 +12,7 @@ from transformers import VivitModel, VivitImageProcessor
 
 class VivitRegression(nn.Module):
     def __init__(self, vivit_pretrained="google/vivit-b-16x2-kinetics400", n_parcels=1000,
-                 torch_dtype=torch.float32, criterion="mae"):
+                 torch_dtype=torch.float32, criterion="mae", freeze_encoder=False):
         super().__init__()
 
         self.vivit_processor = VivitImageProcessor.from_pretrained(vivit_pretrained)
@@ -23,6 +23,10 @@ class VivitRegression(nn.Module):
         )
         self.video_projection = nn.Linear(768, n_parcels, bias=True)
         self.criterion = criterion
+
+        if freeze_encoder:
+            for param in self.video_encoder.parameters():
+                param.requires_grad = False
 
     def image_processor(self):
         return self.vivit_processor
@@ -47,7 +51,7 @@ class VivitRegression(nn.Module):
 
 class VivitMLPContrastive(nn.Module):
     def __init__(self, vivit_pretrained="google/vivit-b-16x2-kinetics400", embed_dim=128,
-                 temperature=1.0, fmri_window=1, torch_dtype=torch.float32):
+                 temperature=1.0, fmri_window=1, torch_dtype=torch.float32, freeze_encoder=False):
         super().__init__()
 
         self.vivit_processor = VivitImageProcessor.from_pretrained(vivit_pretrained)
@@ -67,6 +71,10 @@ class VivitMLPContrastive(nn.Module):
         )
 
         self.temperature = temperature
+
+        if freeze_encoder:
+            for param in self.video_encoder.parameters():
+                param.requires_grad = False
 
 
     def image_processor(self):
@@ -105,8 +113,8 @@ class VivitMLPContrastive(nn.Module):
 
 class VivitConvContrastive(VivitMLPContrastive):
     def __init__(self, vivit_pretrained="google/vivit-b-16x2-kinetics400", embed_dim=128,
-                 temperature=1.0, fmri_window=1, torch_dtype=torch.float32):
-        super().__init__(vivit_pretrained, embed_dim, temperature, fmri_window, torch_dtype)
+                 temperature=1.0, fmri_window=1, torch_dtype=torch.float32, freeze_encoder=False):
+        super().__init__(vivit_pretrained, embed_dim, temperature, fmri_window, torch_dtype, freeze_encoder)
 
         self.fmri_encoder = nn.Sequential(
             nn.Conv1d(1000, 1000, kernel_size=3, stride=1, padding=0, groups=1000),

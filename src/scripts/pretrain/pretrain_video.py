@@ -39,6 +39,7 @@ def parse_args():
 
     # model
     parser.add_argument('--model', help="model to use", type=str, default='vivit-mlp')
+    parser.add_argument('--freeze_encoder', action='store_true', help='freeze encoder')
     parser.add_argument('--n_frames', type=int, default=32, help="number of frames to use")
     parser.add_argument('--embed_dim', help="embedding dimension", type=int, default=128)
     parser.add_argument('--temperature', help="temperature for clip loss", type=float, default=1.0)
@@ -46,6 +47,7 @@ def parse_args():
     parser.add_argument('--hrf_delay', help="hrf delay", type=int, default=0)
     parser.add_argument('--fmri_window', help="fmri window", type=int, default=1)
     parser.add_argument('--subjects', help="subjects to use", type=int, nargs='+', default=[1,2,3,5])
+    parser.add_argument('--encode_subject_id', action='store_true', help='encode subject id in the model')
     parser.add_argument('--train_seasons', help="seasons to use for training", type=int, nargs='+',
                         default=[1, 2, 3, 4, 5])
     parser.add_argument('--test_seasons', help="seasons to use for testing", type=int, nargs='+', default=[6])
@@ -103,32 +105,35 @@ def parse_args():
 def load_model(opts):
     if opts.model == "vivit-mlp":
         model = models.vivit.VivitMLPContrastive(embed_dim=opts.embed_dim, temperature=opts.temperature,
-                                                 fmri_window=opts.fmri_window).to(opts.device)
+                                                 fmri_window=opts.fmri_window, freeze_encoder=opts.freeze_encoder).to(opts.device)
         return model.image_processor(), model
 
     elif opts.model == "vivit-conv1d":
         model = models.vivit.VivitConvContrastive(embed_dim=opts.embed_dim, temperature=opts.temperature,
-                                                  fmri_window=opts.fmri_window).to(opts.device)
+                                                  fmri_window=opts.fmri_window, freeze_encoder=opts.freeze_encoder).to(opts.device)
         return model.image_processor(), model
 
     elif opts.model == "vivit":
-        model = models.vivit.VivitRegression(criterion=opts.method).to(opts.device)
+        model = models.vivit.VivitRegression(criterion=opts.method, freeze_encoder=opts.freeze_encoder).to(opts.device)
         return model.image_processor(), model
 
     elif opts.model == "videomae":
-        model = models.videomae.VideoMAERegression(criterion=opts.method).to(opts.device)
+        model = models.videomae.VideoMAERegression(criterion=opts.method, freeze_encoder=opts.freeze_encoder,
+                                                   use_subject_id=opts.encode_subject_id).to(opts.device)
         return model.image_processor(), model
 
     raise ValueError(f"Model not recognized {opts.model}")
 
 
 def load_optimizer(model, opts):
+    parameters = filter(lambda p: p.requires_grad, model.parameters())
+
     if opts.optimizer == "adam":
-        return torch.optim.Adam(model.parameters(), lr=opts.lr, weight_decay=opts.weight_decay)
+        return torch.optim.Adam(parameters, lr=opts.lr, weight_decay=opts.weight_decay)
     elif opts.optimizer == "adamw":
-        return torch.optim.AdamW(model.parameters(), lr=opts.lr, betas=(0.9, 0.999), eps=1e-8) #, weight_decay=opts.weight_decay)
+        return torch.optim.AdamW(parameters, lr=opts.lr, betas=(0.9, 0.999), eps=1e-8) #, weight_decay=opts.weight_decay)
     elif opts.optimizer == "sgd":
-        return torch.optim.SGD(model.parameters(), lr=opts.lr, weight_decay=opts.weight_decay, momentum=opts.momentum)
+        return torch.optim.SGD(parameters, lr=opts.lr, weight_decay=opts.weight_decay, momentum=opts.momentum)
 
     raise ValueError("Optimizer not recognized")
 
@@ -142,8 +147,9 @@ def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
     model.train()
 
     t1 = time.time()
-    for idx, (video, fmri) in enumerate(dataloader):
+    for idx, (video, fmri, subjects) in enumerate(dataloader):
         video, fmri = video.to(opts.device), fmri.to(opts.device)
+        subjects = subjects.to(opts.device)
         data_time.update(time.time() - t1)
 
         video['pixel_values'] = video['pixel_values'].squeeze(1)
@@ -152,7 +158,7 @@ def train(model, dataloader, optimizer, opts, epoch, writer, scaler):
         warmup_learning_rate(opts, epoch, idx, len(dataloader), optimizer)
 
         with torch.amp.autocast("cuda", enabled=opts.amp):
-            outputs = model(video, fmri)
+            outputs = model(video, fmri, subjects.half())
             running_loss = outputs[0]
 
         optimizer.zero_grad()
@@ -200,22 +206,25 @@ def test(model, dataloader, opts, epoch, writer, scaler):
 
     all_outputs = []
     all_labels = []
+    all_subjects = []
 
     model.eval()
 
     t1 = time.time()
-    for idx, (video, fmri) in enumerate(dataloader):
+    for idx, (video, fmri, subjects) in enumerate(dataloader):
         video, fmri = video.to(opts.device), fmri.to(opts.device)
+        subjects = subjects.to(opts.device)
         data_time.update(time.time() - t1)
 
         video['pixel_values'] = video['pixel_values'].squeeze(1)
         bsz = video['pixel_values'].shape[0]
 
         with torch.amp.autocast("cuda", enabled=opts.amp):
-            running_loss, outputs = model(video, fmri)
+            running_loss, outputs = model(video, fmri, subjects.half())
 
         all_outputs.append(outputs.detach())
         all_labels.append(fmri)
+        all_subjects.append(subjects)
 
         loss.update(running_loss.item(), bsz)
         batch_time.update(time.time() - t1)
@@ -234,7 +243,11 @@ def test(model, dataloader, opts, epoch, writer, scaler):
 
     all_outputs = torch.cat(all_outputs, dim=0)
     all_labels = torch.cat(all_labels, dim=0)
-    r = util.torch_pearsonr(all_outputs, all_labels)
+    all_subjects = torch.cat(all_subjects, dim=0)
+
+    r = {}
+    for subject in torch.unique(all_subjects).tolist():
+        r[f"sub{subject:02d}"] = util.torch_pearsonr(all_outputs[all_subjects == subject], all_labels[all_subjects == subject])
     print("r:", r)
 
     return r, loss.avg, batch_time.avg, data_time.avg
@@ -245,7 +258,7 @@ def main():
     util.set_seed(opts.trial)
 
     run_name = (f"{opts.model}_{opts.method}_{'downsampled_' if opts.downsampled else ''}_nframes{opts.n_frames}_"
-                f"sub{''.join(str(s) for s in opts.subjects)}_"
+                f"sub{''.join(str(s) for s in opts.subjects)}_id{opts.encode_subject_id}_"
                 f"w{opts.stimulus_window}_hrf{opts.hrf_delay}_fmriW{opts.fmri_window}_"
                 f"{opts.optimizer}_lr{opts.lr}_decay{opts.lr_decay}_"
                 f"wd{opts.weight_decay}_bsz{opts.batch_size}_ts{opts.timesample}_"
@@ -275,7 +288,6 @@ def main():
     preprocess, model = load_model(opts)
     optimizer = load_optimizer(model, opts)
     scaler = torch.amp.GradScaler("cuda", enabled=opts.amp)
-
 
     trainable_parameters = filter(lambda p: p.requires_grad, model.parameters())
     tot_trainable = sum([np.prod(p.size()) for p in trainable_parameters])
@@ -344,7 +356,9 @@ def main():
         if opts.method != "clip":
             r, test_loss, _, _ = test(model, test_dataloader, opts, epoch, writer, scaler)
             writer.add_scalar("test/loss", test_loss, epoch)
-            writer.add_scalar("test/r", r, epoch)
+
+            for sub, r_value in r.items():
+                writer.add_scalar(f"test/{sub}_r", r_value, epoch)
 
         save_model(model, optimizer, scaler, opts, epoch, save_file)
         torch.cuda.empty_cache()
