@@ -224,7 +224,7 @@ def test(model, dataloader, opts, epoch, writer, scaler):
 
         all_outputs.append(outputs.detach())
         all_labels.append(fmri)
-        all_subjects.append(subjects)
+        all_subjects.append(subjects.int())
 
         loss.update(running_loss.item(), bsz)
         batch_time.update(time.time() - t1)
@@ -246,8 +246,8 @@ def test(model, dataloader, opts, epoch, writer, scaler):
     all_subjects = torch.cat(all_subjects, dim=0)
 
     r = {}
-    for subject in torch.unique(all_subjects).tolist():
-        r[f"sub{subject:02d}"] = util.torch_pearsonr(all_outputs[all_subjects == subject], all_labels[all_subjects == subject])
+    for subject in torch.unique(all_subjects.int()).tolist():
+        r[f"sub{int(subject):02d}"] = util.torch_pearsonr(all_outputs[all_subjects == subject], all_labels[all_subjects == subject])
     print("r:", r)
 
     return r, loss.avg, batch_time.avg, data_time.avg
