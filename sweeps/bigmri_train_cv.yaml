@@ -1,0 +1,51 @@
+# submit --name algonauts-mae-ft-ds64-w5-hrf2-fw1-allsubseas --gpus 1 --host hssh3
+# eidos-service.di.unito.it/barbano/algonauts:latest -m scripts.pretrain.pretrain_video -
+# -data_dir /scratch/data --save_dir /scratch/workspace/algonauts-challenge-2025/output
+# --model videomae --method mae --amp --batch_size 64 --optimizer adamw --lr 1e-4
+# --downsampled --stimulus_window 5 --hrf_delay 2 --fmri_window 1 --subjects 1 2 3 5
+# --encode_subject_id --train_seasons 1 2 3 4 5 --n_frames 16
+program: scripts.pretrain.pretrain_video
+project: algonauts-challenge-2025
+command:
+  - ${env}
+  - python3
+  - -m
+  - ${program}
+  - ${args}
+  - --amp
+  - --downsampled
+  - --encode_subject_id
+  - --freeze_encoder
+method: grid
+name: videomae - hrf stimulus window
+parameters:
+  data_dir:
+    value: /scratch/data
+  save_dir:
+    value: /scratch/algonauts-challenge-2025/output
+  model:
+    value: videomae
+  method:
+    value: mae
+  batch_size:
+    value: 256
+  optimizer:
+    value: adamw
+  lr:
+    values: [1e-4, 1e-5]
+  stimulus_window:
+    values: [1, 5, 10, 15]
+  hrf_delay:
+    values: [0, 2, 4, 8]
+  fmri_window:
+    values: [1, 2, 4, 8]
+  subjects:
+    value: 1
+  train_seasons:
+    value: 5
+  n_frames:
+    values: [16, 32]
+  epochs:
+    value: 1
+
+

@@ -1,0 +1,2 @@
+FROM eidos-service.di.unito.it/barbano/algonauts:latest
+ENTRYPOINT ["/opt/conda/bin/wandb", "agent"]
