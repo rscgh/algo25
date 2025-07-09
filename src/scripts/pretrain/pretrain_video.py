@@ -90,7 +90,7 @@ def parse_args():
             opts.warmup_to = eta_min + (opts.lr - eta_min) * (
                     1 + math.cos(math.pi * opts.warm_epochs / opts.epochs)) / 2
         else:
-            opts.milestones = [int(s) for s in opts.lr_decay_epochs.split(',')]
+            opts.milestones = [int(s) for s in opts.lr_decay_epochs]
             opts.warmup_to = opts.lr
 
     if opts.method == "clip" and opts.model not in ["vivit-mlp", "vivit-conv1d"]:
@@ -286,6 +286,10 @@ def main():
         print(f"{k}=={v}")
 
     preprocess, model = load_model(opts)
+    if torch.cuda.device_count() > 1:
+        print(f"Using {torch.cuda.device_count()} GPUs")
+        model = torch.nn.DataParallel(model)
+
     optimizer = load_optimizer(model, opts)
     scaler = torch.amp.GradScaler("cuda", enabled=opts.amp)
 
@@ -299,7 +303,8 @@ def main():
                              downsampled=opts.downsampled, stimulus_window=opts.stimulus_window,
                              hrf_delay=opts.hrf_delay, subjects=opts.subjects, seasons=opts.train_seasons,
                              fmri_window=opts.fmri_window, target_video_len=opts.n_frames)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=opts.batch_size, shuffle=True, num_workers=8,
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=opts.batch_size, shuffle=True,
+                                             num_workers=8 * torch.cuda.device_count(),
                                              pin_memory=True, prefetch_factor=2)
 
 
@@ -308,7 +313,8 @@ def main():
                                   hrf_delay=opts.hrf_delay, subjects=opts.subjects, seasons=opts.test_seasons,
                                   fmri_window=opts.fmri_window, target_video_len=opts.n_frames)
     test_dataloader = torch.utils.data.DataLoader(test_dataset, batch_size=opts.batch_size, shuffle=False,
-                                                  num_workers=8, pin_memory=True, prefetch_factor=2)
+                                                  num_workers=8 * torch.cuda.device_count(), pin_memory=True,
+                                                  prefetch_factor=2)
 
     save_file = os.path.join(save_dir, "weights.pth")
     start_epoch = 1
