@@ -20,7 +20,7 @@ def init_cpu_monitoring(current_user=None, pid=None):
     return cpu_ids
 
 def get_user_processes(current_user=None, excl_system=False):
-    excludes=["slurm_script", "systemd", "(sd-pam)", "starter", "squashfuse_ll", "sshd"]
+    excludes=["slurm_script", "systemd", "(sd-pam)", "starter", "squashfuse_ll", "sshd", "fuse-overlayfs"]
 
     if current_user is None:
         current_user = os.environ.get("USER") or os.environ.get("USERNAME")

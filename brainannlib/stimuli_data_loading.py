@@ -92,6 +92,45 @@ class TRSamplingDecordVDataset(Dataset):
         if self.transform is not None:
             frame = self.transform(frame)
         return frame, 0
+    
+
+class TRSamplingDecordVDatasetV2(Dataset):
+    def __init__(self, movie_file_path, target_mri_TR, imgs_per_tr=1, transform=None, num_threads=1, v=False):
+        self.videoreader = VideoReader(movie_file_path, num_threads=num_threads, ctx=cpu(0))
+        self.videoreader.seek(0)
+        self.transform = transform
+        self.n_frames = len(self.videoreader)
+        self.fps = self.videoreader.get_avg_fps();
+        #self.n_tr_samples = math.ceil((self.n_frames/self.fps)/target_mri_TR)
+        self.n_trs = int(round((self.n_frames/self.fps)/target_mri_TR))
+
+        tr_start_s = (np.arange(self.n_trs)*target_mri_TR)
+
+        if imgs_per_tr == 1:
+            # take the middle of the tr
+            idxs =tr_start_s+target_mri_TR*0.5
+        else:
+            # take imgs_per_tr images tthrought the TR
+            idxs = []
+            offsets_s = np.linspace(0, target_mri_TR, imgs_per_tr+1)
+            for j, start_s in enumerate(tr_start_s):
+                if v and j <4: print((offsets_s+start_s)[1:])
+                idxs = idxs+ list((offsets_s+start_s)[1:])
+                # skip the first, as it will be equal to the last image of the prev TR
+
+        self.frame_idxs = np.round(np.array(idxs)*self.fps).astype(int)
+        # make sure it stays in the bounds
+        self.frame_idxs = np.clip(self.frame_idxs, 0, self.n_frames-1)#.astype(int)
+        
+    def __len__(self): return len(self.frame_idxs)
+    
+    def __getitem__(self, idx):   
+        mvidx = self.frame_idxs[idx]
+        frame = self.videoreader[mvidx]
+        if self.transform is not None:
+            frame = self.transform(frame)
+        return frame, 0
+
 
 
 import decord
@@ -194,21 +233,28 @@ class TRClipVideoDecordDataset(Dataset):
     
     def __getitem__(self, idx):   
         mvidx = self.start_frame_idxs[idx]
-        frame = self.videoreader[mvidx:mvidx+self.frames_per_tr]
+        frames = self.videoreader[mvidx:mvidx+self.frames_per_tr]
         if self.transform is not None:
-            frame = self.transform(frame)
-        return frame, 0
+            frames = self.transform(frames)
+        return frames, 0
         
 
 ##############################################################################
 # Pure text datasets
 
 # Custom dataset to hold the sentences
-import string
+import string, re
+
+def normalize_pauses(text):
+    return re.sub(r'\.{3,8}', '\n', re.sub(r'\.{9,}', '\n\n', text))
 
 class SentenceDataset(Dataset):
-    def __init__(self, sentences, mode="last_n_trs", last_n_trs=5, n_used_words=510):
+    def __init__(self, sentences, mode="last_n_trs", last_n_trs=5, n_used_words=510, prep_sentences=None):
         self.sentences = sentences
+        self.prep_sentences = prep_sentences
+        if self.prep_sentences=="contpretr-friends-v1":
+            self.sentences = [s if not(s is np.nan) else "..." for s in self.sentences]
+
         self.mode=mode
         self.last_n_trs = last_n_trs;
         self.n_used_words = n_used_words;
@@ -227,7 +273,10 @@ class SentenceDataset(Dataset):
           nopunct_text = tr_text#tr_text.translate(str.maketrans('', '', string.punctuation)) # remove punctuation
           text= " ".join(nopunct_text.split(" ")[-self.n_used_words:])
 
-        if text== "": text= " "
+        if self.prep_sentences=="contpretr-friends-v1":
+            text = normalize_pauses(text)
+
+        if text=="": text= " "
         return text
     
 

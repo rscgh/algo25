@@ -344,6 +344,95 @@ def score_with_parallelization(preds, brain_data, idxperms=None, nperm=2000, chu
     return orig_score, perm_scores, pval
 
 
+from statsmodels.stats.multitest import multipletests
+from scipy.stats import combine_pvalues
+
+def get_sign(model_id, sign_dict, sign_threshold=0.001):
+    if not(model_id in sign_dict.keys()): 
+        print("No significance info for", model_id)
+        return None, None, slice(0,0)
+    p_uncorr = np.array([v[-2] for k,v in sign_dict[model_id].items()]) # accumulate all subjects
+    p_uncorr = np.apply_along_axis(lambda p: combine_pvalues(p, method='stouffer')[1], 0, p_uncorr)
+    _, p_corr, _, _ = multipletests(p_uncorr, alpha=sign_threshold, method='fdr_bh')
+    #p_corr = np.array([v[-1] for k,v in sign_dict[row["model"]].items()]) # accumulate all subjects
+    #mask = ((p_corr<0.05).sum(0)<3) # | (baseline_figures.mean(0)[:59412]<0.2) # significant in at least 3 subjects
+    mask = p_corr>sign_threshold
+    return p_uncorr, p_corr, mask
+
+##############################################################################
+## Spin permutation significance testing
+import hcp_utils as hcp
+import numpy as np
+from brainspace.utils.parcellation import reduce_by_labels
+from brainspace.datasets import load_conte69
+from brainspace.null_models import SpinPermutations
+import scipy.stats
+
+def fast_corr(A, B):
+    A_centered = A - A.mean(axis=0)
+    B_centered = B - B.mean(axis=0)
+    numerator = (A_centered * B_centered).sum(axis=0)
+    denominator = np.sqrt((A_centered**2).sum(axis=0) * (B_centered**2).sum(axis=0))
+    return numerator / denominator
+
+def R2(Pred, Real):
+    """Compute coefficient of determination (R^2)."""
+    SSres = np.mean((Real - Pred) ** 2, 0)
+    SStot = np.var(Real, 0)
+    return np.nan_to_num(1 - SSres / SStot)
+
+
+def from29to32k(data, nv=32492, grayl=hcp.vertex_info['grayl']):
+    tmp = np.zeros(nv)
+    tmp[:] = np.nan
+    tmp[grayl] = data#[grayl]
+    return tmp
+
+
+def parcellate_batch(data, labels, op='mean'):
+    uq_labels = np.unique(labels)
+    out = np.empty((data.shape[0],uq_labels.size), dtype=data.dtype)
+
+    for i, lab in enumerate(uq_labels):
+        mask = labels == lab
+        out[:, i] = data[:, mask].mean(axis=1)
+
+    return out
+
+def spintest3(feature, target,  targ_parcell=None, n_rand=1000, sp=None, 
+              corr_fn = scipy.stats.mstats.pearsonr):
+
+    feature_32k = from29to32k(feature)
+    feature = feature_32k;
+    target =from29to32k(target) if targ_parcell is None else target
+
+    if not(targ_parcell is None): # if target is parcellated
+        # assumes the first label is medial-wall/noise
+        feature = reduce_by_labels(feature_32k, targ_parcell)[1:]
+
+    mask = ~np.isnan(feature) & ~np.isnan(target)
+    r_obs, pv_obs = corr_fn(feature[mask], target[mask])
+    
+    if sp is None:
+        sp = SpinPermutations(n_rep=n_rand, random_state=19883)
+        sphere_lh, sphere_rh = load_conte69(as_sphere=True)
+        sp.fit(sphere_lh)
+        
+    feat_rotated = sp.randomize(feature_32k)
+    if not(targ_parcell is None):
+        feat_rotated= parcellate_batch(feat_rotated, targ_parcell)[:,1:]
+
+    r_spin = np.zeros(len(feat_rotated))
+
+    for i, perm in enumerate(feat_rotated):        
+        mask_rot = ~np.isnan(perm) & ~np.isnan(target)# Remove midline
+        r_spin[i] = corr_fn(perm[mask_rot], target[mask_rot])[0]
+    
+    pv_spin = np.mean(np.abs(r_spin) >= np.abs(r_obs))
+    return r_obs, pv_spin
+
+
+
 ##############################################################################
 ## Memory stats etc (old) -> move to monitoring
 """

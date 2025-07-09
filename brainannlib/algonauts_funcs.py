@@ -591,3 +591,114 @@ def align_features_friends_s7(root_data_dir, features, subjects = [1, 2, 3, 5]):
             print("Samples are off across subjects:", episode, n_trs)
 
     return aligned_feautures
+
+
+
+
+def align_features_and_fmri_samples_v2(features, fmri, excluded_samples_start, excluded_samples_end,\
+                                    hrf_delay, stimulus_window, stim_sets, v=False, n_targets=1000, custom_episodes=[]):
+    # initialize empty array with 1000 parcels
+    # this will return a matrix of concatenated timepoints across episodes/movies x 1000 parcels
+    aligned_fmri = np.empty((0, n_targets), dtype=np.float32) 
+    # the feature matrix will have the same # of timepoints as the aligned_fmri matrix
+    aligned_features = []
+
+    isfirst = True; # just for verbose output/debugging
+
+    for stimset in stim_sets:
+        # stimset e.g. "s01", "s02", ... "bourne", "life", ...
+        # but also acommodating their style: "friends-s01", "movie10-bourne" ...
+        if stimset == "custom_episodes":
+            episodes_in_set = custom_episodes;
+        else:
+            stimset = stimset.split("-")[-1]
+            episodes_in_set = [key for key in fmri if key.startswith(stimset)]
+
+        if v>=1: print(stimset, len(episodes_in_set), episodes_in_set[:3])
+
+        for episode in episodes_in_set:
+            fmri_run = fmri[episode][excluded_samples_start:-excluded_samples_end]
+            n_trs = len(fmri_run)
+            #print(n_trs, aligned_fmri.shape, fmri_run.shape )
+            aligned_fmri = np.append(aligned_fmri, fmri_run, 0)
+
+            if isfirst and v>=2: print("\nsplit", episode, fmri_run.shape)
+                
+            # for each tr in the fmri-data
+            for s in range(n_trs):
+                # create an empty feature vector, to which the feautures 
+                # from each modality will be concatenated
+                # in the end f_all is appended to aligned_features
+                f_all = np.empty(0)
+
+                # for each modalitly [i.e. visual, audio or language]
+                for mod, mod_features in features.items():
+                    
+                    episode_feat_len= len(mod_features[episode])
+                    stim_wind = stimulus_window if not(isinstance(stimulus_window, dict)) else stimulus_window[mod]
+
+                    idx_start = max(excluded_samples_start, s + excluded_samples_start - hrf_delay - stim_wind + 1)
+                    idx_end = idx_start + stim_wind
+                    if idx_end > episode_feat_len:
+                        idx_end = episode_feat_len
+                        idx_start = idx_end - stim_wind
+
+                    # we get the feature vectors for multiple samples (N=stimulus_window), and flatten them
+                    f = mod_features[episode][idx_start:idx_end].flatten()
+                    
+                    if isfirst and (s in [0, 1, 2, 10, 30, n_trs-2, n_trs-1]) and v>=2:
+                        print(mod, f"s={s}, idx_start={idx_start}, idx_end={idx_end}, idx_max={episode_feat_len}, f={f.shape}, {f.flatten().shape}")
+
+                    f_all = np.append(f_all, f)
+
+                if isfirst and (s in [0, 1, 2, 10, 30, n_trs-2, n_trs-1]) and v>=2:
+                    print(f"s={s}, f_all_shape={f_all.shape}")
+                        
+                aligned_features.append(f_all)
+            
+            isfirst=False;
+
+    return np.array(aligned_features, dtype=np.float32), aligned_fmri
+
+
+def align_features_friends_s7_v2(root_data_dir, features, stimulus_window=5, subjects = [1, 2, 3, 5]):
+    hrf_delay =3#, stimulus_window = 3, 5
+    aligned_feautures, n_samples = {}, {}
+
+    for sub in subjects:
+        sub_key = f'sub-0{sub}'
+        aligned_feautures[sub_key] = {}
+        fmri_samples = np.load(
+            os.path.join(
+                root_data_dir, 'algonauts_2025.competitors', 'fmri', sub_key,
+                'target_sample_number', f'{sub_key}_friends-s7_fmri_samples.npy'
+            ), allow_pickle=True).item()
+
+        for episode, n_trs in fmri_samples.items():
+            features_epi = []
+            for s in range(n_trs):
+                f_all = []
+                for mod, mod_features in features.items():
+                    episode_feat_len= len(mod_features[episode])
+                    stim_wind = stimulus_window if not(isinstance(stimulus_window, dict)) else stimulus_window[mod]              
+
+                    #if mod in ['visual', 'audio']:
+                    idx_start = max(0, s - hrf_delay - stim_wind + 1)
+                    idx_end = idx_start + stim_wind
+                    if idx_end > episode_feat_len:
+                        idx_end = episode_feat_len;
+                        idx_start = idx_end - stim_wind
+                    f = mod_features[episode][idx_start:idx_end].flatten()
+                    
+                    f_all.append(f)
+                
+                features_epi.append(np.concatenate(f_all))
+            
+            aligned_feautures[sub_key][episode] = np.array(features_epi, dtype=np.float32)
+            n_samples.setdefault(episode, []).append(n_trs)
+
+    for episode, n_trs in n_samples.items():
+        if not np.all(n_trs[0] == np.array(n_trs)):
+            print("Samples are off across subjects:", episode, n_trs)
+
+    return aligned_feautures

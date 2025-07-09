@@ -106,3 +106,47 @@ def run_cv_predictions_v2(ann_data, brain_data, k=5, perm_type="blocks", pipelin
     
     return pred_brain_data, scores, mean_scores_across_folds, posthoc_scores, alphas;
 
+
+
+#########################################################################################
+## Stacked regression
+
+
+def esimate_stacked_model_coeffs(err):
+    # intialize a few matrices
+    n_feature_sets=len(err)
+    q = matrix(np.zeros((n_feature_sets)))
+    G = matrix(-np.eye(n_feature_sets, n_feature_sets))
+    h = matrix(np.zeros(n_feature_sets))
+    A = matrix(np.ones((1, n_feature_sets)))
+    b = matrix(np.ones(1))
+
+    # some kind of error covariance matrix (?)
+    # aka the nly real input into our stacked model estimation
+    P = np.zeros((n_vox, n_feature_sets, n_feature_sets))
+    for i in range(n_feature_sets):
+        for j in range(n_feature_sets):
+            P[:, i, j] = np.mean(err[i] * err[j], 0)
+
+    # The output weight matrix (to be used for stacked predictions)
+    S = np.zeros((n_vox, n_feature_sets)) 
+
+    for i in range(0, n_vox):
+        PP = matrix(P[i])
+        # solve for stacking weights for every voxel (solve "the quadratic programming problem")
+        S[i, :] = np.array(solvers.qp(PP, q, G, h, A, b)["x"]).reshape(n_feature_sets)
+
+    return S; 
+
+def stack_predicions(preds, S):
+    n_vox= preds.shape[-1]
+    stacked_pred = np.zeros((preds.shape[1], n_vox))
+    for i in range(0, n_vox):
+        z_test = np.array([preds[feature_j, :, i]  for feature_j in range(len(preds))])   
+        stacked_pred[:, i] = np.dot(S[i, :], z_test)
+    return stacked_pred;
+
+
+
+
+

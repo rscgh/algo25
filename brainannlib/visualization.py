@@ -104,7 +104,7 @@ cortex.db.filestore = f"{root_data_dir}/pycortex_filestore"
 cortex.db = cortex.database.Database(f"{root_data_dir}/pycortex_filestore")
 #print(cortex.database.default_filestore)
 
-def plot_flatmap(data, mask=None, mtype = "fsaverage", height=250, data_style=None, **kwargs):
+def plot_flatmap(data, mask=None, mtype = "fsaverage", height=250, data_style=None, overlay_file="", roi_list=[], qkw={}, roikw={}, **kwargs):
   vdata = data
   if not(mask is None):
     vdata = np.zeros_like(mask)
@@ -113,9 +113,17 @@ def plot_flatmap(data, mask=None, mtype = "fsaverage", height=250, data_style=No
   if data_style=="fullHCP":
     import hcp_utils as hcp
     vdata = np.concatenate([hcp.left_cortex_data(vdata), hcp.right_cortex_data(vdata)]);
- 
+    #fig = cortex.quickshow(vertex_data, with_rois=False, height =1300, shadow=10,  )
+  
   vertex_data = cortex.Vertex(vdata, mtype,**kwargs)
-  return cortex.quickshow(vertex_data, with_rois=0, height =height);
+  qsparams=dict( with_rois=0, height =height, colorbar_location=(0.4,-0.08,0.2,0.05));
+  qsparams.update(qkw)
+  fig = cortex.quickshow(vertex_data, **qsparams);
+  if roi_list !=[]: 
+      roi_def_kw={"stroke":"#999", "label-font-size":"16pt"}
+      roi_def_kw.update(roikw)
+      img, im, selfobj = add_rois(fig, vertex_data, overlay_file=overlay_file, roi_list=roi_list, **roi_def_kw)
+  return fig;
 
 
 def plot_layer_predictions_flat(scores, mask = None, mtype="fsaverage", auto_max=None):
@@ -131,6 +139,89 @@ def plot_layer_predictions_flat(scores, mask = None, mtype="fsaverage", auto_max
    plt.subplots_adjust(wspace=0, hspace=0);
    plt.tight_layout();
    return fig;
+
+
+## -----------------------------------------------------------
+## Own extension of flatmap plotting with ROIs
+
+from lxml import etree
+import cairosvg
+from lxml.builder import E
+from cortex.svgoverlay import Overlay
+import tempfile
+import copy
+
+def own_get_texture(selfobj, layer_name, height, name=None, background=None, labels=True,
+        shape_list=None, **kwargs):
+
+        import matplotlib.pyplot as plt
+        # Set the size of the texture
+        if background is not None:
+            img = E.image(
+                {"{http://www.w3.org/1999/xlink}href":"data:image/png;base64,%s"%background},
+                id="image_%s"%name, x="0", y="0",
+                width=str(selfobj.svgshape[0]),
+                height=str(selfobj.svgshape[1]),
+            )
+            selfobj.svg.getroot().insert(0, img)
+        if height is None: height = selfobj.svgshape[1]
+        height = int(height)
+        
+        # separate kwargs starting with "label-"
+        label_kwargs = {k[6:]:v for k, v in kwargs.items() if k[:6] == "label-"}
+        kwargs = {k:v for k, v in kwargs.items() if k[:6] != "label-"}
+
+        for layer in selfobj:#svg.layers.values():
+            #print(layer)
+            if layer.name == layer_name:
+                #print("Found", layer_name)
+                layer.visible = True
+                layer.labels.visible = labels
+                for name_, shape_ in layer.shapes.items():
+                    # honor visibility set in the svg
+                    if shape_list is not None:
+                        shape_.visible = name_ in shape_list
+                    #print(name_, shape_.visible)
+                    # Set visibility of labels (by setting text alpha to 0)
+                    # This could be less baroque, but text elements currently
+                    # do not have individually settable visibility / style params
+                    tmp_style = copy.deepcopy(layer.labels.text_style)
+                    tmp_style['fill-opacity'] = '1' if shape_.visible else '0'
+                    # {'font-family': 'Helvetica, sans-serif', 'font-size': '14pt', 'font-weight': 'bold', 'font-style': 'italic', 'fill': 'white', 'fill-opacity': '1',
+                    # 'text-anchor': 'middle', 'filter': 'url(#dropshadow)', 'display': 'inline'}
+                    # {'font-size': '20pt'}
+                    tmp_style.update(label_kwargs)
+                    tmp_style_str = ';'.join(['%s:%s'%(k,v) for k, v in tmp_style.items() if v != 'None'])
+                    for i in range(len(layer.labels.elements[name_])):
+                        layer.labels.elements[name_][i].set('style', tmp_style_str)
+                layer.set(**kwargs)
+            else:
+                layer.visible = False
+                layer.labels.visible = False
+        
+        
+        svg_data = etree.tostring(selfobj.svg)
+        png_data = cairosvg.svg2png(bytestring=svg_data)
+        png_io = io.BytesIO(png_data)
+        im = plt.imread(png_io)
+        return im, selfobj
+
+#from cortex.quickflat import _get_extents
+from cortex.quickflat.utils import _get_height, _get_extents, _convert_svg_kwargs, _get_fig_and_ax, _parse_defaults
+from cortex.database import db
+def add_rois(fig, dataview, extents=None, height=None, with_labels=True, roi_list=None, overlay_file=None, **kwargs):
+    if extents is None:
+        extents = _get_extents(fig)
+    if height is None:
+        height = _get_height(fig)        
+    svgobject = db.get_overlay(dataview.subject, overlay_file=overlay_file)
+    im, selfobj = own_get_texture(svgobject, 'rois', height, labels=with_labels, shape_list=roi_list, **kwargs)
+    
+    _, ax = _get_fig_and_ax(fig)
+    img = ax.imshow(im, aspect='equal', interpolation='bicubic',  extent=extents, label='rois', zorder=1000)
+    return img, im, selfobj
+
+
 
 
 
@@ -251,7 +342,7 @@ def shifted_cmap(cmap, vmin=-0.2, vmax=0.4, data=None, midpoint=0, greymidpoint=
     colorlist=cmap(shifted_indices)
     if greymidpoint:
         zero_index=np.argmin(np.absolute(shifted_indices-0.5))#+1
-        colorlist[zero_index+0:zero_index+2]=(0.8,0.8,0.8, 1)
+        colorlist[zero_index-1:zero_index+1]=(0.8,0.8,0.8, 1)
 
     new_cmap = colors.ListedColormap(colorlist)
     return new_cmap, vmin, vmax
