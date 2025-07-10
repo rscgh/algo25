@@ -1,4 +1,5 @@
-
+import sys
+sys.path.append('/workspace/rob_src/algo25/')
 
 from brainannlib.algonauts_funcs import load_stimulus_features, load_fmri
 from brainannlib.algonauts_funcs import align_features_and_fmri_samples, align_features_friends_s7_v2
