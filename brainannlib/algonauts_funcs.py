@@ -455,10 +455,11 @@ def load_stimulus_features(root_data_dir, modalities=['visual', 'audio', 'langua
     Load stimulus features for all modalities (visual, audio, language) from both train and test files.
     """
     features = {m:{} for m in modalities}
-    for dataset in ['train', 'test']:
+    for dataset in ['train', 'test', 'ood']:
         for modality in modalities:
             path = os.path.join(root_data_dir, 'stimulus_features', 'pca',
                 'friends_movie10', modality, f'features_{dataset}.npy')
+            if not os.path.exists(path): continue;
             features[modality].update(np.load(path, allow_pickle=True).item())
     return features
 

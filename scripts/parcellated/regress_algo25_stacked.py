@@ -403,6 +403,10 @@ def fit_and_score_stacked_regression(fmri, movies_train, movies_optim, movies_te
             model_id = model_name[4:]
             print("Using external model preds:", model_id)
 
+        #if postfix=="kunalpca250":
+        #    print("Set HRF-delay to zero")
+        #    hrf_delay=0;
+
         stim_window = int(stim_window); n_feat=int(n_feat);
 
         # if not optimization movies given, just use the same as training movies
@@ -568,13 +572,16 @@ def only_predict_stacked_regression(model, movies_test, subject, args):
             print("Load existing predictions:", pred_fn)
             #preds_dict = {"s01e02b":"mri_data"}
             preds_dict = np.load(pred_fn, allow_pickle=1).item()
-            if model_name.startswith("ext_"):
-                preds_dict = {k: v[5:-5] for k, v in preds_dict.items()}
+            #if model_name.startswith("ext_") and not("slowr50klora" in model_name):
+            #    preds_dict = {k: v[5:-5] for k, v in preds_dict.items()}
             #if is_episode:
             #y_test_mid_pred, y_test = load_preds_and_align_mri(preds_dict, fmri, ["custom_episodes"], 
             #                ess=excluded_samples_start, ese=excluded_samples_end, custom_episodes=movies_test)
             if np.all([c in preds_dict.keys() for c in movies_test]):
-                y_test_pred.update({clip:preds_dict[clip] for clip in movies_test})
+                print("adding")
+                for clip in movies_test:
+                    y_test_pred[clip][model_id] = preds_dict[clip]
+                    #print(model_id, clip, preds_dict[clip].shape)
                 continue; 
             
             print("Not all predictions present in the loaded file, missing")
@@ -589,9 +596,9 @@ def only_predict_stacked_regression(model, movies_test, subject, args):
         x_test_mid = align_features_and_fmri_samples_ood_v2(enc_features, root_data_dir, sub=subject, stimulus_window=stim_window, episodes=movies_test)
 
         for clip in x_test_mid.keys():
-            print(clip, x_test_mid[clip])
-            print(x_test_mid[clip].shape)
+            #print(model_id, clip,x_test_mid[clip].shape)
             y_test_pred[clip][model_id] = model.indiv_model_predict(model_id, x_test_mid[clip])
+            #print(model_id, clip, y_test_pred[clip][model_id].shape)
 
         
     print("Predicting.");
@@ -704,28 +711,35 @@ if __name__ == "__main__":
                 ood_clips=all_ood_clips[10:] # only chaplin
             
             per_clip_predictions = only_predict_stacked_regression(model, ood_clips, subject, args)
-            submission_predictions_ood[subject] = per_clip_predictions
+            submission_predictions_ood[f"sub-0{subject}"] = per_clip_predictions.astype(np.float32)
+    
 
+    ## done unless we are preparing a submission
+    if args.prep_submission:
 
-    # Save the predicted fMRI dictionary as a .npy file
-    output_file = f"{pred_dir}/model_comb_{args.comb_name}_trained_on_{args.train_optim_test}-ood_predictions.npy"
-    if args.chaplin: 
-        assert os.path.exists(output_file), f"File needs to exist, but doesnt: {output_file}"
-        ood_preds = np.load(output_file, allow_pickle=1).item()
-        for sub in submission_predictions_ood.keys():
-            ood_preds[sub].update(submission_predictions_ood[sub])
-        submission_predictions_ood = ood_preds
+        # Save the predicted fMRI dictionary as a .npy file
+        output_file = f"{pred_dir}/model_comb_{args.comb_name}_trained_on_{args.train_optim_test}-ood_predictions.npy"
+        if args.chaplin: 
+            assert os.path.exists(output_file), f"File needs to exist, but doesnt: {output_file}"
+            ood_preds = np.load(output_file, allow_pickle=1).item()
+            for sub in submission_predictions_ood.keys():
+                ood_preds[sub].update(submission_predictions_ood[sub])
+            submission_predictions_ood = ood_preds
 
-    np.save(output_file, submission_predictions_ood)
-    print(f"Formatted predictions saved to: {output_file}")
+        np.save(output_file, submission_predictions_ood)
+        print(f"Formatted predictions saved to: {output_file}")
 
-    if args.chaplin: 
-        subject = list(submission_predictions_ood.keys())[0]
-        assert np.all([x in submission_predictions_ood[subject].keys() for x in all_ood_clips])
-        # Zip the saved file for submission
-        zip_file = f"{pred_dir}/model_comb_{args.comb_name}_trained_on_{args.train_optim_test}-ood_predictions.zip"
-        import zipfile
-        with zipfile.ZipFile(zip_file, 'w') as zipf:
-            zipf.write(output_file, os.path.basename(output_file))
-        print(f"Submission file successfully zipped as: {zip_file}")
-        os.remove(output_file);
+        if args.chaplin: 
+            
+            for sub in submission_predictions_ood.keys():
+                print(sub, submission_predictions_ood[sub].keys())
+
+            subject = list(submission_predictions_ood.keys())[0]
+            assert np.all([x in submission_predictions_ood[subject].keys() for x in all_ood_clips])
+            # Zip the saved file for submission
+            zip_file = f"{pred_dir}/model_comb_{args.comb_name}_trained_on_{args.train_optim_test}-ood_predictions.zip"
+            import zipfile
+            with zipfile.ZipFile(zip_file, 'w') as zipf:
+                zipf.write(output_file, os.path.basename(output_file))
+            print(f"Submission file successfully zipped as: {zip_file}")
+            #os.remove(output_file);
