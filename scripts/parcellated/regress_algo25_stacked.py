@@ -318,6 +318,7 @@ class StackedRegressor(BaseEstimator, RegressorMixin):
 
 def compile_features_for_def(model_name, postfix, n_feat):
     fn= os.path.join(featred_dir, f"actv-{model_name}.{postfix}.all_stimuli.s7ext.pca2000.npy");
+    print(fn)
     mod_features=None
     if not(os.path.exists(fn)):
         if model_name=="algo_slowr50":
