@@ -23,10 +23,6 @@ RUN mkdir /data
 RUN chmod 775 /data
 RUN chown -R :1337 /data
 
-COPY src /src
-RUN chmod 775 /src
-RUN chown -R :1337 /src
-
 RUN pip3 install transformers
 RUN pip3 install torchcodec
 RUN pip3 install h5py nilearn nibabel
@@ -39,6 +35,10 @@ RUN apt-get install -y libavutil-dev
 RUN pip3 install wandb matplotlib scikit-learn
 
 RUN pip3 freeze > pip-freeze.txt
+
+COPY src /src
+RUN chmod 775 /src
+RUN chown -R :1337 /src
 
 WORKDIR /src
 

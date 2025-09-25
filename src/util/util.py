@@ -10,6 +10,18 @@ from pathlib import Path
 from sklearn.metrics import balanced_accuracy_score, roc_auc_score, r2_score
 
 
+
+def get_packages_versions():
+    try:
+        from pip._internal.operations import freeze
+    except ImportError:
+        from pip.operations import freeze
+
+
+    pkgs = {p[0]: p[1] for p in [pkg.split("==") for pkg in freeze.freeze() if "file://" not in pkg]}
+    return pkgs
+
+
 class NViewTransform:
     """Create N augmented views of the same image"""
 
@@ -182,7 +194,7 @@ def set_seed(seed):
     torch.manual_seed(seed)
 
 
-def save_model(model, optimizer, opts, epoch, save_file):
+def save_model(model, optimizer, scaler, opts, epoch, save_file):
     print('==> Saving...')
     state_dict = model.state_dict()
     if torch.cuda.device_count() > 1:
@@ -191,7 +203,8 @@ def save_model(model, optimizer, opts, epoch, save_file):
     state = {
         'opts': opts,
         'model': state_dict,
-        'optimizer': optimizer.state_dict(),
+        'optimizer': optimizer.state_dict() if optimizer else None,
+        'scaler': scaler.state_dict() if scaler else None,
         'epoch': epoch,
         'run_id': wandb.run.id
     }
@@ -324,3 +337,13 @@ def compute_site_ba(model, train_loader, test_int, test_ext, opts):
     ba_ext = site_estimator.score(ext_X, ext_y)
 
     return site_estimator, ba_train, ba_int, ba_ext
+
+
+def torch_pearsonr(output, target):
+    x = output
+    y = target
+
+    vx = x - torch.mean(x, dim=-1, keepdim=True)
+    vy = y - torch.mean(y, dim=-1, keepdim=True)
+
+    return torch.mean(torch.sum(vx * vy, dim=-1) / (torch.sqrt(torch.sum(vx ** 2, dim=-1)) * torch.sqrt(torch.sum(vy ** 2, dim=-1))))
