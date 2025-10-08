@@ -64,3 +64,46 @@ for y in plt.gca().get_yticks(): plt.gca().axhline(y, color='#DDD', linestyle='-
 for x in [0, 6, 10]:  # example x positions
     plt.gca().axvspan(x - 0.5, x + 0.5, color='orange', alpha=0.066)
 plt.gcf().set_dpi(300)
+
+
+
+
+###############################################################
+# Figure 1 - Correlation plot
+
+def show_heatplot(data, xlabels=None, ylabels=None, cmap="coolwarm", title=None,figsize=(25, 10), colorbar=True, ax=None, vmin=None, vmax=None, aspect="auto"):
+    #v=np.absolute(data).max()
+    if ax is None: ax=plt.figure(figsize=figsize).gca()
+    im=ax.matshow(data, vmin=vmin, vmax=vmax, cmap=cmap, aspect=aspect); 
+    if colorbar: plt.colorbar(im, ax=ax);
+    if not(ylabels is None): ax.set_yticks(np.arange(len(ylabels))); ax.set_yticklabels(ylabels)
+    if not(xlabels is None): ax.set_xticks(np.arange(len(xlabels))); ax.set_xticklabels(xlabels)
+    for (i, j), val in np.ndenumerate(data):
+        ax.text(j, i, f'{round(val,2)}', ha='center', va='center', color='black');
+    if not(title is None): ax.set_title(title);
+    return ax;
+
+preferred_sym_cmap= cm.prinsenvlag_r
+
+
+selection = scores_df_all[
+        (scores_df_all['scored_data'] == "figures") & 
+        ~(scores_df_all["model"].isin(excluded_models))
+]
+
+selection= selection[scores_df_all.pretrained].sort_values(by=["modality"], ascending=True)
+
+model_keys=selection["model"].unique()
+model_disp_names = [model_display_name_map[k] for k in model_keys]
+
+s2 = movie_set_names.index("figures")
+explained_maps = np.array([scores_mvsets[k][:, s2].mean(0) for k in model_keys])
+
+labels = [k[:4] for k in model_keys]
+fig, axs = plt.subplots(1,1,figsize=(12,5.3), sharey=True);
+plt.suptitle(f"Correlation of score maps averaged across 3 subjects");
+
+corrs=np.corrcoef(explained_maps[:,:59412])
+labels = [k[:4]+"." for k in model_keys]
+show_heatplot(corrs, labels, model_disp_names, ax=axs, colorbar=True, cmap=preferred_sym_cmap, vmin=-1, vmax=1, aspect='auto');
+plt.gcf().set_dpi(300)

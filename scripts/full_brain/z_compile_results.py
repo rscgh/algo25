@@ -205,6 +205,12 @@ sign_fn = res_dir+f"/sign_best_models_all_subjs_figures_ev10thTR_5000perms_p{sig
 np.save(sign_fn, pvalsd)
 
 
+
+####################################################################################
+# Comaprison of model pairs
+
+
+
 modality_pairs =[
     ("Llama-3.1-8B.4L3T1000W", "Llama-3.1-8B.4L3T1000W+untr"),
     ("whisper-small.4L18T29S", "whisper-small.4L18T29S+untr"),

@@ -5,7 +5,6 @@ import pickle as pk
 from brainannlib.stats_and_metrics import R2
 from brainannlib.algonauts_funcs import (
     align_features_and_fmri_samples, 
-    train_sklearn_ridgecv
 )
 
 from cvxopt import matrix, solvers
@@ -14,6 +13,10 @@ solvers.options['show_progress'] = False
 root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
 featred_dir = f"{root_data_dir}/ann_brain_data/featred"
 res_dir = "/scratch-scc/users/robert.scholz2/emmy_code/results/"
+
+import os
+root_data_dir = os.environ["ALGONAUTS_ROOT_DIR"]
+acc_dir= f"{root_data_dir}/ann_brain_data/outputs"
 
 ###########################################################################
 # Stacked regression functions
@@ -200,3 +203,85 @@ for k in res.keys():
 payload=dict(res_raw=res_raw, res=res, score_type="R2")
 var_fn = res_dir+f"/varpart_all_stacked_on_s06_allsubjs_figures_ev10thTR.v2.R2.optim_on_friends06_and_score_on_figures.npy"
 np.save(var_fn, payload)
+
+
+############################################################################
+# Variance partitioning
+
+"""
+res_dir = "/scratch-scc/users/robert.scholz2/emmy_code/results/"
+var_fn = res_dir+f"/varpart_all_stacked_on_s06_allsubjs_figures_ev10thTR.v2.R2.optim_and_score_on_figures.npy"
+p=np.load(var_fn, allow_pickle=1).item();
+res_raw=p["res_raw"]; res=p["res"];""";
+
+llm, aud, vis= [x for x in best_fsets]
+# if we dont clip, the reconstruction error will be zero, but we get "negative contribution" by parts, which is harder to interpret.
+#c = lambda x : np.clip(x,0,1) 
+c = lambda x : x
+def log(k): print(np.array([k.min(), k.max(), k.mean()]).round(2));
+
+# full models
+full = res[tuple(sorted(best_fsets))]
+audi_vis = res[tuple(sorted([aud, vis]))]
+audi_llm = res[tuple(sorted([aud, llm]))]
+llm_vis = res[tuple(sorted([llm, vis]))]
+
+# unique contributions to only the joint audio-visual / audi_llm
+uniq_aud = audi_vis - res[tuple([vis])]
+uniq_vis = audi_vis - res[tuple([aud])]
+uniq_llm = audi_llm - res[tuple([aud])]
+
+# unique contributions to the full three modality model
+uniq_llm2 = full - c(audi_vis)
+uniq_aud2 = full - c(llm_vis)
+uniq_vis2 = full - c(audi_llm)
+
+# unique contributions by two-modality combinations 
+uniq_shared_audvis = full - res[tuple([llm])] - c(uniq_aud2) - c(uniq_vis2)
+uniq_shared_audllm = full - res[tuple([vis])] - c(uniq_aud2) - c(uniq_llm2)
+uniq_shared_llmvis = full - res[tuple([aud])] - c(uniq_vis2) - c(uniq_llm2)
+
+# shared among all 
+all_shared = full - c(uniq_shared_audvis) - c(uniq_shared_audllm) - c(uniq_shared_llmvis)
+all_shared = all_shared - c(uniq_aud2) - c(uniq_vis2)  - c(uniq_llm2)
+
+# total variance by modality
+total_audio = full-uniq_llm2-uniq_vis2-uniq_shared_llmvis
+total_vis = full-uniq_llm2-uniq_aud2-uniq_shared_audllm
+total_llm = full-uniq_aud2-uniq_vis2-uniq_shared_audvis
+
+recon = c(uniq_aud2) + c(uniq_vis2)  + c(uniq_llm2) + \
+        c(uniq_shared_audvis) + c(uniq_shared_audllm) + c(uniq_shared_llmvis) +\
+        all_shared 
+
+
+res_dir = "/scratch-scc/users/robert.scholz2/emmy_code/results/"
+var_fn = res_dir+f"/varpart_all_stacked_on_s06_allsubjs_figures_ev10thTR.v2.R2.optim_on_friends06_and_score_on_figures.npy"
+
+p=np.load(var_fn, allow_pickle=1).item();
+res_raw=p["res_raw"]; res=p["res"];
+
+fn=f"{acc_dir}/retest_bw+pca_baseline.R2.npy"
+figures_R2_baselines = np.array(np.load(fn, allow_pickle=1).item()["scores_bw"]["figures"])[:, :59412];
+print(figures_R2_baselines.shape)
+
+
+full = res[tuple(sorted(best_fsets))] # shape (3, 59412)
+
+rfi = figures_R2_baselines-full
+
+# uniq-audio or uniq-vis on full
+percentage_unimodal = np.zeros_like(full.mean(0));
+percentage_unimodal[:]=-1
+mask= full.mean(0)>0.075
+percentage_unimodal = (c(uniq_aud2)+c(uniq_vis2)).mean(0)/np.clip(full.mean(0),0.25**2,1)
+
+
+res_dir = "/scratch-scc/users/robert.scholz2/emmy_code/results/"
+var_deriv_fn = res_dir+f"/varpart_all_stacked_on_s06_allsubjs_figures_ev10thTR.v2.R2.optim_and_score_on_figures.deriv.npy"
+
+p = dict(uniq_llm=uniq_llm, uniq_aud=uniq_aud, uniq_vis=uniq_vis, 
+         uniq_llm2=uniq_llm2, uniq_aud2=uniq_aud2, uniq_vis2=uniq_vis2, 
+         uniq_shared_audvis=uniq_shared_audvis, uniq_shared_audllm=uniq_shared_audllm, uniq_shared_llmvis=uniq_shared_llmvis, 
+         all_shared=all_shared, percentage_unimodal=percentage_unimodal, recon=recon, rfi=rfi, full=full)
+np.save(var_deriv_fn, p)
