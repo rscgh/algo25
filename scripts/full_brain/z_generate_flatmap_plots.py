@@ -39,6 +39,11 @@ print(paired_sign_dict.keys())
 
 
 ###############################################################
+# Load results ...
+
+
+
+###############################################################
 # Figure 1 - Overview Point/Stripplot
 
 
@@ -107,3 +112,7 @@ corrs=np.corrcoef(explained_maps[:,:59412])
 labels = [k[:4]+"." for k in model_keys]
 show_heatplot(corrs, labels, model_disp_names, ax=axs, colorbar=True, cmap=preferred_sym_cmap, vmin=-1, vmax=1, aspect='auto');
 plt.gcf().set_dpi(300)
+
+
+###############################################################
+# Trained vs untrained
