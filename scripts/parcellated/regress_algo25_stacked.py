@@ -490,7 +490,7 @@ def fit_and_score_stacked_regression(fmri, movies_train, movies_optim, movies_te
     print("---")
 
     score = [args.train_optim_test, "_".join(movies_test), (0), mean_acc, encoding_accuracy]
-    return model, score
+    return model, score, stacked_pred
 
 ########################################################################
 # OOD submission
@@ -604,7 +604,7 @@ def only_predict_stacked_regression(model, movies_test, subject, args):
     print("Predicting.");
     stacked_pred={}
     for clip in movies_test:
-        stacked_pred[clip] = model.predict(None, y_pred = y_test_pred[clip])
+        stacked_pred[clip] = model.predict(None, y_pred = y_test_pred[clip]).astype(np.float32)
         print(clip, stacked_pred[clip].shape)
 
     
@@ -660,6 +660,7 @@ if __name__ == "__main__":
     #parser.add_argument("--save", action="store_true", help="Save the estimated models")
     parser.add_argument("--chaplin", action="store_true", help="Save the predctions")
     parser.add_argument("--save_predictions", action="store_true", help="Save the predctions")
+    parser.add_argument("--save_stack_test_predictions", action="store_true", help="Save the predctions")
     parser.add_argument("--prep_submission", action="store_true", help="")
 
     parser.add_argument("--comb_name", type=str, default="llama+whisper_default")
@@ -679,7 +680,12 @@ if __name__ == "__main__":
     for subject in args.subject_nrs:
         fmri=None;
         fmri = load_fmri(root_data_dir, subject) # subject = 1; 
-        model, score= fit_and_score_stacked_regression(fmri, movies_train, movies_optim, movies_test, subject, args)
+        model, score, stacked_pred= fit_and_score_stacked_regression(fmri, movies_train, movies_optim, movies_test, subject, args)
+
+        if args.save_stack_test_predictions:
+            fn= f"{pred_dir}/model_comb_{args.comb_name}_{args.train_optim_test}_predictions.npy"
+            np.save(fn, stacked_pred)
+            print("Saved:", fn)
 
         comb_embd_results_fn = "algo25_combined_embds_stacked_results.csv"
 
@@ -711,7 +717,7 @@ if __name__ == "__main__":
                 ood_clips=all_ood_clips[10:] # only chaplin
             
             per_clip_predictions = only_predict_stacked_regression(model, ood_clips, subject, args)
-            submission_predictions_ood[f"sub-0{subject}"] = per_clip_predictions.astype(np.float32)
+            submission_predictions_ood[f"sub-0{subject}"] = per_clip_predictions
     
 
     ## done unless we are preparing a submission
