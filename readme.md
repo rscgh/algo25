@@ -4,9 +4,8 @@
 
 ## Repository structure
 
-* **brainannlib** is a very lightweight pacakge containing shared functions
+* **brainannlib** is a very lightweight package containing shared functions
 * **scripts** - reliaze one specific step (e.g. collecting activations of an ANN to stimuli and saving them) by making use of the common functions defined in brainannlib, usually to be run on slurm nodes
-* **notebooks** - visualization of results and lightweight analysis computation
 
 ## Installation 
 
@@ -44,14 +43,6 @@ mkdir -p $ALGONAUTS_ROOT_DIR/ann_brain_data/outputs
 # To avoid having to rerun it everytime you start a new shell, you can add it also to your user profile
 echo 'export ALGONAUTS_ROOT_DIR="/scratch-scc/users/robert.scholz2/cneuromod"' >> ~/.profile
 ```
-
-**Notes on conda env create**
-* this will install all the required packages (using conda if available, and otherwise pip)
-* not all packages may be required, depending on which ANNs you use 
-* once we test more networks, we might have to update this
-* also first check if the right target version of cuda is given, you can check what cuda version your node supports by running nvidia-smi in the shell (possibly you will have to 'module load cuda' or similiar first)
-* The classic solver from conda is likely too slow to install all the packages. From conda 23.10, the faster conda-libmamba-solver is the default solver. For earlier versions, if possible either update conda or install the solver; if you cannot do that (e.g. due to access restrictions in a server environment) you can try to use dropin replacements such as mamba or micromamba, e.g. `module load micromamba` and `micromamba create --file environment_conda_algoenv.yml`. The environments should be fully compatible with conda
-`conda config --add envs_dirs /mnt/vast-standard/home/robert.scholz2/u14262/micromamba/envs`
 
 
 ## Download of the challenge files
@@ -100,55 +91,6 @@ export LD_LIBRARY_PATH=$(dirname $(g++ -print-file-name=libstdc++.so.6)):$LD_LIB
 strings $(g++ -print-file-name=libstdc++.so.6) | grep GLIBCXX
 
 ```
-
-## Working with the git repo
-
-**Working on a your own (feature) branch**
-```sh
-git checkout -b feature/my-feature  # -b creates
-
-# within the feature branch, commit changes
-git add .
-git commit -m "Description of changes"
-```
-
-To make it clearer what a specific branch does, we can stick to branch naming conventions such as
-```sh
-feature/language-model-llamav32         # e.g. including feature reduction
-feature/vision-models-various           # e.g. including multiple models
-feature/looped-feature-selection        # including on specific feature selection method
-release/submission-v2.0                 # whenever we try to work on a new submission
-# If you can think of other branch-types that could be useful we can add them here.
-```
-
-**Updating and pushing of the branch**
-```sh
-# change to main branch again & ensure the local main is up-to-date with the remote
-git checkout main
-git pull origin main  
-
-# include all the updates from the main
-# in the branch through rebasing
-git checkout feature/my-feature
-git rebase main
-
-# in case of conflict, edit the files (resolving conflicts)
-# and then continue the rebase
-git add <file-with-conflict>
-git rebase --continue
-# or alternatively abort: git rebase --abort
-
-# push the rebased branch to the remote
-# need to force, because rebase might have
-# has changed # the commit history
-git push origin feature/my-feature --force
-```
-
-**Integrating branch into main through pull request**
-```sh
-# Go to GitHub → your repository → open a pull request from my-feature-branch to main.
-# After approval, merge the PR on GitHub.
-
 # On your machine, pull these changes
 git checkout main
 git pull origin main
