@@ -119,7 +119,7 @@ if __name__ == "__main__":
 
     model_name = args.checkpoint.split("/")[-1]
     param_dtype = "auto" if args.param_dtype=="auto" else getattr(torch, args.param_dtype);
-    hf_token= "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"
+    hf_token= os.environ.get("HF_TOKEN")
     
     tokenizer, model = load_model_and_tokenizer(args.checkpoint, device, hf_token, param_dtype, args.untrained)
     kwargs = dict(kept_tokens=args.kept_tokens, n_used_words=args.n_used_words, stimuli=args.stimuli, n_layers=args.n_layers, untrained=args.untrained,
