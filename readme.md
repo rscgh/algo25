@@ -1,11 +1,24 @@
 
-# Contents
+## Algonauts 2025 competition
 
+Our competition report can be found on here: https://arxiv.org/abs/2510.06235
+
+More information on the challenge can be found on the [offical website](https://algonautsproject.com/2025/index.html), and the leaderboard is available on [codabench](https://www.codabench.org/competitions/4313/)
+
+* Most of the revelevant scripts can be found under [`scripts/parcellated/`](scripts/parcellated/)
+* The code for the Contrastive Video-fMRI Encoder can be found under [`scripts/contrastive_model/`](scripts/contrastive_model/)
+* Code for the experiments with [enhanced transcripts](https://github.com/bagga005/friends_transcripts_algonauts25) and [fine-tuning slow_r50](https://github.com/bagga005/algonauts) can be found in separate repos.
+
+To cite this work, please use:
+```
+Scholz, R., Bagga, K., Ahrends, C., & Barbano, C. A. (2025). Stacked Regression using Off-the-shelf, Stimulus-tuned and Fine-tuned Neural Networks for Predicting fMRI Brain Responses to Movies (Algonauts 2025 Report). [arXiv:2510.06235](https://arxiv.org/abs/2510.06235)
+```
 
 ## Repository structure
 
-* **brainannlib** is a very lightweight package containing shared functions
+* **brainannlib** is a package containing shared functions
 * **scripts** - reliaze one specific step (e.g. collecting activations of an ANN to stimuli and saving them) by making use of the common functions defined in brainannlib, usually to be run on slurm nodes
+
 
 ## Installation 
 
@@ -90,11 +103,4 @@ module load gcc/14
 export LD_LIBRARY_PATH=$(dirname $(g++ -print-file-name=libstdc++.so.6)):$LD_LIBRARY_PATH
 strings $(g++ -print-file-name=libstdc++.so.6) | grep GLIBCXX
 
-```
-# On your machine, pull these changes
-git checkout main
-git pull origin main
-# optionally delete the branch:
-git branch -d feature/my-feature
-git push origin --delete feature/my-feature
 ```
