@@ -9,6 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from brainannlib.feature_loading import quickalign, load_and_concat_activations
 from brainannlib.stats_and_metrics import corr_score, get_joint_explained_variance
+from brainannlib.monitoring import list_biggest_vars
 import gc
 
 def setup_environment():
@@ -18,50 +19,6 @@ def setup_environment():
     print("Hostname:", socket.gethostname())
     print("PID:", os.getpid())
 
-
-def load_and_concat_activations(file, layers=None, swapaxes=True, \
-                                scale_before_flat=False):
-    data=np.load(file, allow_pickle=1)
-    if data.shape==(): data=data.item(); 
-
-    # if data is already a numpy array, then we assum shape
-    # layer, time, token, hidden;
-    # and hence the default of swapaxes is true
-
-    if isinstance(data, dict):
-        if layers is None: layers = list(data.keys())
-        for l in layers: 
-            if not(l in data.keys()): print(f"Warning: missing layer {l} in file {file}")
-
-        first_shape = data[layers[0]].shape[1:]
-        different_layer_dims = any(data[l].shape[1:]!=first_shape for l in layers)
-    
-        if different_layer_dims:
-            sc=StandardScaler()
-            data = [v.reshape((v.shape[0],-1)) for k,v in data.items() if k in layers];
-            if scale_before_flat: data = [sc.fit_transform(v) for v in data]
-            data = np.concatenate(data, -1).astype(np.float32)
-            swapaxes = False;
-            # out: time, flat_dims
-        else:
-            data = np.stack([data[l] for l in layers]).astype(np.float32)
-            # shape: layer, time, token, hidden
-
-    orig_shp=data.shape;
-    if swapaxes: 
-        data = np.swapaxes(data, 0,1)
-        # output should be: time, layer, token, hidden
-
-    ### TODO (optional) ###
-    # new params for maximum number of layers and tokens
-        
-    data = data.astype(np.float32);
-    return data, orig_shp, layers;
-
-
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-import gc
 
 def load_and_concat_activations(file, layers=None, swapaxes=True, scale_before_flat=False):
     data = np.load(file, allow_pickle=True)
@@ -107,8 +64,6 @@ def load_and_concat_activations(file, layers=None, swapaxes=True, scale_before_f
     return data, orig_shp, layers
 
 
-import gc
-from brainannlib.monitoring import list_biggest_vars
 def load_features_for_stimuli(root_data_dir, model_name, postfix, stimuli, swapaxes=True, args={}):
     actv_dir = os.path.join(root_data_dir, "ann_brain_data/activations")
     mvid = lambda x : x.split("/")[-1].split("-")[2+model_name.count("-")]
@@ -144,11 +99,8 @@ def load_features_for_stimuli(root_data_dir, model_name, postfix, stimuli, swapa
         train_features.append(sc.fit_transform(reshaped)[::stride])
         del sc
         del reshaped; gc.collect()
-        
-        #list_biggest_vars(locals(), n=3)
-        
+            
     train_features = np.concatenate(train_features)
-    #del feature_list; 
     gc.collect()
     return train_features
 
@@ -165,13 +117,8 @@ def fit_pca(root_data_dir, model_name, postfix, red_train_features, n_components
         return;
 
     # Reduce the features to 2000 
-    pca = PCA(n_components=args.n, random_state=1004, svd_solver="randomized")
-    #scaler = StandardScaler()
-    
+    pca = PCA(n_components=args.n, random_state=1004, svd_solver="randomized")    
     # here make sure reduction is feasible by selecting approx 5k samples
-    # alternative: stride= max(1, round(len(train_features) / 4588))
-    #stride = 5 # every 5th sample
-    #red_train_features = train_features[::stride];
 
     print("Estimating PCA on:", red_train_features.shape, "...")
     #red_train_features = scaler.fit_transform(red_train_features)
@@ -191,120 +138,13 @@ def fit_pca(root_data_dir, model_name, postfix, red_train_features, n_components
     _,_, ratio = get_joint_explained_variance(embd_feat, pca, scaled_truth) # 23s
     print("variance explained in full train_features:", ratio.round(3)) 
     # stats: 
-    # estimated on (23472, 10240) train_features[::10] ~ 0.618, on [::2] ~ 0.74, and on 
+    # estimated on (23472, 10240) train_features[::10] ~ 0.618, on [::5] ~ 0.74, and on 
     # estimated on (23472, 10240) train_features[::2] ~ 0.933
     # reference: PCA decomposition based on friends season 1-5, [::10] ~ 0.995
     del train_features  """;
     del red_train_features
     return feat_reduction;
 
-
-'''
-def reduce_stimuli_to_single_file(root_data_dir, model_name, postfix, stimuli, just_compile, swapaxes=True, args={}):
-    
-    actv_dir = os.path.join(root_data_dir, "ann_brain_data/activations")
-    featred_dir = f"{root_data_dir}/ann_brain_data/featred"
-    mvid = lambda x : x.split("/")[-1].split("-")[2+model_name.count("-")]
-
-    tmpl = f"{actv_dir}/*{model_name}*{postfix}.npy"
-    all_red_files = glob(tmpl)
-    print("## Reducing ANN-feature data: ")
-    print("template: ", tmpl)
-    print("Found files: ", len(all_red_files))
-
-    newpostfix = postfix if args.newpostfix == "" else args.newpostfix
-
-
-    if stimuli!="all":
-        all_red_files = [f for f in all_red_files if  any(s in f for s in stimuli.split(','))]
-        print("Filters:", stimuli)
-        print("Filtered files: ", len(all_red_files))
-    print(len(all_red_files), list(all_red_files)[:3], list(all_red_files)[-3:])
-
-    #if reduce_layerwise_first:
-    #    features = reduce_layerwise_first(root_data_dir, model_name, postfix, all_red_files, layers)
-
-    # loading reference feature_reduction pipeline
-    if not just_compile:
-        fn= f"{featred_dir}/actv-{model_name}.{newpostfix}.all_stimuli.s7ext.pca2000.pkl"
-        print("Using PCA: ", fn)
-        feat_reduction =pk.load(open(fn,"rb"))
-        scaler = StandardScaler()
-
-    features = {} # will contain ~ 5.5GB
-    var_explained= {}
-    layers =  None # will be set after the first pass (in case of a dict), 
-    # to make sure its the same
-    
-    red_fn= f"{featred_dir}/actv-{model_name}.{newpostfix}.all_stimuli.s7ext.pca2000.npy"
-    var_fn= f"{featred_dir}/actv-{model_name}.{newpostfix}.all_stimuli.s7ext.pca2000.varexpl.npy"
-
-    #if os.path.exists(red_fn):# and os.path.exists(var_fn):
-    #    print("Loading pre-existing checkpoints:")
-    #    features = np.load(red_fn, allow_pickle=1).item()
-    #    var_explained = np.load(var_fn, allow_pickle=1).item()
-    #    assert list(features.keys())==list(var_explained.keys())
-
-    for i, stim_activations_file in tqdm(enumerate(all_red_files), total=len(all_red_files)):
-        epi_name= mvid(stim_activations_file);
-        if epi_name in features.keys(): continue;
-        #print(stim_activations_file)
-
-        data, shp, layers=load_and_concat_activations(stim_activations_file, layers=layers, swapaxes=swapaxes);
-        if args.slice != "":
-            data = data[args.slice]
-            shp = str(shp) + ">>" + str(data.shape)
-        #if len(data.shape)>3: data= data[:,:,-1,:]
-        data = data.reshape((data.shape[0],-1))
-        # independently scale runs first
-        data_tf = data.copy() if just_compile else feat_reduction[-1].transform(scaler.fit_transform(data))       
-
-        #data_tf=feat_reduction.transform(data)
-        if i==0:  print(epi_name, shp, "-->", data.shape, "-->", data_tf.shape)#
-        features[epi_name] = data_tf.astype(np.float32)
-
-        if not just_compile:
-            # check how much variance is beeing explained by the reference components
-            scaled_truth= scaler.fit_transform(data) # 16s
-            var_expl, var_full, ratio = get_joint_explained_variance(data_tf, feat_reduction[-1], scaled_truth)
-            var_explained[epi_name] = [var_expl, var_full, ratio]
-        
-        del data
-        if i%50==0: gc.collect();
-
-        """if i%50==0: 
-            if not just_compile:
-                print(f"{i} - variance explained for full {epi_name} features:", ratio.round(3))
-                print("Saving var-expl-info:", var_fn)
-                np.save(var_fn, var_explained)
-                
-            # Saving checkpoints
-            print("Saving c[ompiled features:", red_fn)
-            print(len(features.keys()));
-            np.save(red_fn, features)""";
-            
-
-    # Saving them for faster loading next time
-    print("Saving compiled features:", red_fn)
-    print(len(features.keys()), features["friends_s02e01a"].shape);
-    np.save(red_fn, features)
-    
-    if not just_compile:
-        print("Saving var-expl-info:", var_fn)
-        np.save(var_fn, var_explained)
-
-        # Check how much variance of the full activations is 
-        # explained by the partial activations
-        print("\n## Var-Expl Summary:")
-        e = np.array([v[0] for k,v in var_explained.items()])
-        f = np.array([v[1] for k,v in var_explained.items()])
-        clip_ratios = [e[i,:].sum()/f[i,:].sum() for i in range(len(e))];
-        ratio=e[:,:].sum() / f[:,:].sum()
-        print(ratio.round(3), "\t", len(clip_ratios), np.array(clip_ratios).round(3)[:10])
-        #del scaled_truth
-    
-    #del data
-''';
 
 def reduce_stimuli_to_single_file(root_data_dir, model_name, postfix, stimuli, just_compile, swapaxes=True, args={}):
     
@@ -325,10 +165,7 @@ def reduce_stimuli_to_single_file(root_data_dir, model_name, postfix, stimuli, j
         print("Filters:", stimuli)
         for f in all_red_files: print(f)
     print(len(all_red_files), list(all_red_files)[:3], list(all_red_files)[-3:])
-
-    #if reduce_layerwise_first:
-    #    features = reduce_layerwise_first(root_data_dir, model_name, postfix, all_red_files, layers)
-
+    
     # loading reference feature_reduction pipeline
     if not just_compile:
         fn= f"{featred_dir}/actv-{model_name}.{newpostfix}.all_stimuli.s7ext.pca2000.pkl"
@@ -350,12 +187,6 @@ def reduce_stimuli_to_single_file(root_data_dir, model_name, postfix, stimuli, j
         print("Loading existing ", var_fn)
         var_explained = np.load(var_fn, allow_pickle=1).item(); 
 
-    #if os.path.exists(red_fn):# and os.path.exists(var_fn):
-    #    print("Loading pre-existing checkpoints:")
-    #    features = np.load(red_fn, allow_pickle=1).item()
-    #    var_explained = np.load(var_fn, allow_pickle=1).item()
-    #    assert list(features.keys())==list(var_explained.keys())
-
     for i, stim_activations_file in tqdm(enumerate(all_red_files), total=len(all_red_files)):
         epi_name= mvid(stim_activations_file);
         if epi_name in features.keys(): continue;
@@ -382,17 +213,6 @@ def reduce_stimuli_to_single_file(root_data_dir, model_name, postfix, stimuli, j
         
         del data
         if i%50==0: gc.collect();
-
-        """if i%50==0: 
-            if not just_compile:
-                print(f"{i} - variance explained for full {epi_name} features:", ratio.round(3))
-                print("Saving var-expl-info:", var_fn)
-                np.save(var_fn, var_explained)
-                
-            # Saving checkpoints
-            print("Saving c[ompiled features:", red_fn)
-            print(len(features.keys()));
-            np.save(red_fn, features)""";
             
 
     # Saving them for faster loading next time
@@ -412,10 +232,6 @@ def reduce_stimuli_to_single_file(root_data_dir, model_name, postfix, stimuli, j
         clip_ratios = [e[i,:].sum()/f[i,:].sum() for i in range(len(e))];
         ratio=e[:,:].sum() / f[:,:].sum()
         print(ratio.round(3), "\t", len(clip_ratios), np.array(clip_ratios).round(3)[:10])
-        #del scaled_truth
-    
-    #del data
-
 
 
 if __name__ == "__main__":
@@ -457,10 +273,6 @@ if __name__ == "__main__":
     if args.fit_pca:
         train_features = load_features_for_stimuli(root_data_dir,args.model_name, args.postfix, 
                                                    args.est_stimuli, not args.noswapaxes, args=args)
-        
-        #if args.est_on_every_n != 1:
-        #    print(f"Estimate only on every {args.est_on_every_n}th timepoint")
-        #    train_features = train_features[::args.est_on_every_n]
 
         print(train_features.shape) # (23472, 10240)
         _ = fit_pca(root_data_dir, args.model_name, args.postfix, train_features, args=args)
