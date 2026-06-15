@@ -1,3 +1,6 @@
+## Link to my OHBM 2026 Poster
+
+https://drive.google.com/file/d/1gatyg96tFByqAVbEyIsNA00rXW4qHOvJ/view?usp=drivesdk
 
 ## Algonauts 2025 competition
 
